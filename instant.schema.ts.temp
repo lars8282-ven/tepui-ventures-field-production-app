@@ -1,0 +1,139 @@
+// Docs: https://www.instantdb.com/docs/modeling-data
+
+import { i } from "@instantdb/react";
+
+const _schema = i.schema({
+  entities: {
+    "$files": i.entity({
+      path: i.string().unique().indexed(),
+      url: i.string().optional(),
+    }),
+    "$users": i.entity({
+      email: i.string().unique().indexed().optional(),
+      imageURL: i.string().optional(),
+      type: i.string().optional(),
+      name: i.string().optional(),
+      role: i.string().optional(),
+      createdAt: i.string().optional(),
+    }),
+    wells: i.entity({
+      name: i.string(),
+      wellNumber: i.string().unique().indexed(),
+      location: i.string().optional(),
+      status: i.string().indexed(),
+      metadata: i.json().optional(),
+      createdAt: i.string(),
+      updatedAt: i.string(),
+    }),
+    meterReadings: i.entity({
+      value: i.number(),
+      timestamp: i.string().indexed(),
+      meterType: i.string().optional(),
+      unit: i.string(),
+      metadata: i.json().optional(),
+      createdAt: i.string(),
+    }),
+    tankGauging: i.entity({
+      level: i.number(),
+      timestamp: i.string().indexed(),
+      tankNumber: i.string().optional(),
+      metadata: i.json().optional(),
+      createdAt: i.string(),
+    }),
+    baselines: i.entity({
+      type: i.string(),
+      targetValue: i.number(),
+      metricName: i.string(),
+      period: i.string(),
+      startDate: i.string().optional(),
+      endDate: i.string().optional(),
+      metadata: i.json().optional(),
+      createdAt: i.string(),
+      updatedAt: i.string(),
+    }),
+  },
+  links: {
+    "$usersLinkedPrimaryUser": {
+      forward: {
+        on: "$users",
+        has: "one",
+        label: "linkedPrimaryUser",
+        onDelete: "cascade",
+      },
+      reverse: {
+        on: "$users",
+        has: "many",
+        label: "linkedGuestUsers",
+      },
+    },
+    meterReadingWell: {
+      forward: {
+        on: "meterReadings",
+        has: "one",
+        label: "well",
+      },
+      reverse: {
+        on: "wells",
+        has: "many",
+        label: "meterReadings",
+      },
+    },
+    meterReadingUser: {
+      forward: {
+        on: "meterReadings",
+        has: "one",
+        label: "user",
+      },
+      reverse: {
+        on: "$users",
+        has: "many",
+        label: "meterReadings",
+      },
+    },
+    tankGaugingWell: {
+      forward: {
+        on: "tankGauging",
+        has: "one",
+        label: "well",
+      },
+      reverse: {
+        on: "wells",
+        has: "many",
+        label: "tankGauging",
+      },
+    },
+    tankGaugingUser: {
+      forward: {
+        on: "tankGauging",
+        has: "one",
+        label: "user",
+      },
+      reverse: {
+        on: "$users",
+        has: "many",
+        label: "tankGauging",
+      },
+    },
+    baselineWell: {
+      forward: {
+        on: "baselines",
+        has: "one",
+        label: "well",
+      },
+      reverse: {
+        on: "wells",
+        has: "many",
+        label: "baselines",
+      },
+    },
+  },
+  rooms: {},
+});
+
+// This helps TypeScript display nicer intellisense
+type _AppSchema = typeof _schema;
+interface AppSchema extends _AppSchema {}
+const schema: AppSchema = _schema;
+
+export type { AppSchema };
+export default schema;
