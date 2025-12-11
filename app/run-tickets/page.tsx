@@ -672,7 +672,7 @@ export default function RunTicketsPage() {
 
       {runTickets.length > 0 && (
         <div className="mb-8">
-          <RunTicketsVolumeChart runTickets={runTickets} />
+          <RunTicketsVolumeChart runTickets={runTickets as any} />
         </div>
       )}
     </div>
