@@ -147,7 +147,7 @@ export default function RunTicketsPage() {
   const handleEdit = (ticket: any) => {
     const wellId = ticket.wellId || "";
     const well = wells.find((w: any) => w.id === wellId);
-    const wellName = well ? well.name : "";
+    const wellName = well ? (well as any).name : "";
     
     setFormData({
       wellId: wellId,
