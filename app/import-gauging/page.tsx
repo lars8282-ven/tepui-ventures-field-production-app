@@ -61,6 +61,7 @@ export default function ImportGaugingPage() {
       }
       
       setPreview(parsedSheets); // Show all sheets, not just first 5
+      console.log("Preview set - first sheet date:", parsedSheets[0]?.date, "type:", typeof parsedSheets[0]?.date);
       setStep("preview");
     } catch (error: any) {
       console.error("Error parsing file:", error);
@@ -225,16 +226,39 @@ export default function ImportGaugingPage() {
             </div>
           ) : (
             <div className="space-y-4">
-            {preview.map((sheet, idx) => (
+            {preview.map((sheet, idx) => {
+              // Debug: log first sheet data
+              if (idx === 0) console.log(`🔍 Rendering sheet ${sheet.sheetName}: date=${sheet.date}, type=${typeof sheet.date}`);
+              return (
               <div key={idx} className="border border-gray-200 rounded-lg p-4">
                 <div className="flex justify-between items-center mb-2">
                   <h3 className="text-sm font-semibold text-gray-900">
                     Sheet: {sheet.sheetName}
                   </h3>
                   {sheet.date && (
-                    <span className="text-xs text-gray-500">
-                      {new Date(sheet.date).toLocaleDateString()}
-                    </span>
+                    <div className="text-right">
+                      <span className="text-xs text-gray-500">
+                        {/* Display date by extracting from ISO string directly */}
+                        {(() => {
+                          // sheet.date should be an ISO string like "2025-11-22T00:00:00.000Z"
+                          if (typeof sheet.date === 'string' && sheet.date.includes('T')) {
+                            const datePart = sheet.date.split('T')[0]; // "2025-11-22"
+                            const [year, month, day] = datePart.split('-');
+                            return `${month}/${day}/${year}`;
+                          } else {
+                            // Fallback if it's somehow still a Date object or different format
+                            const d = new Date(sheet.date);
+                            const isoString = d.toISOString();
+                            const datePart = isoString.split('T')[0];
+                            const [year, month, day] = datePart.split('-');
+                            return `${month}/${day}/${year} (fallback)`;
+                          }
+                        })()}
+                      </span>
+                      <div className="text-xs text-red-600 font-mono">
+                        DEBUG: type={typeof sheet.date}, raw={String(sheet.date).substring(0, 30)}
+                      </div>
+                    </div>
                   )}
                 </div>
                 <p className="text-xs text-gray-600 mb-2">
@@ -308,7 +332,8 @@ export default function ImportGaugingPage() {
                   </div>
                 )}
               </div>
-            ))}
+            );
+            })}
             </div>
           )}
           <div className="mt-6 flex space-x-3">
