@@ -10,6 +10,7 @@ import { Logo } from "@/components/Logo";
 const navigation = [
   { name: "Dashboard", href: "/dashboard" },
   { name: "Field Entry", href: "/field-entry" },
+  { name: "Run Tickets", href: "/run-tickets" },
   { name: "Summary", href: "/summary" },
   { name: "Baseline", href: "/baseline" },
   { name: "Wells", href: "/wells" },
