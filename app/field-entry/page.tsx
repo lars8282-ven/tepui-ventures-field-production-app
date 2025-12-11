@@ -79,6 +79,7 @@ export default function FieldEntryPage() {
   const [savingWellId, setSavingWellId] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [hasLoadedSettings, setHasLoadedSettings] = useState(false);
+  const [isUserChangingSelection, setIsUserChangingSelection] = useState(false);
 
   // Extract settings from InstantDB
   const settingsRaw = settingsData?.fieldEntrySettings;
@@ -117,24 +118,33 @@ export default function FieldEntryPage() {
     }
   }, [wells.length, settings, hasLoadedSettings, entries.length]);
 
-  // Update selection when settings change (for real-time sync)
+  // Update selection when settings change (for real-time sync from other users)
+  // Only sync if the user is NOT actively changing the selection and it's from another user
   useEffect(() => {
-    if (hasLoadedSettings && settings?.selectedWellIds !== undefined) {
-      try {
-        const parsed = Array.isArray(settings.selectedWellIds) 
-          ? settings.selectedWellIds 
-          : JSON.parse(settings.selectedWellIds as any);
-        // Only update if it's different (to avoid unnecessary re-renders)
-        const newSet = new Set(parsed as string[]);
-        if (newSet.size !== selectedWellIds.size || 
-            Array.from(newSet).some((id: string) => !selectedWellIds.has(id))) {
-          setSelectedWellIds(newSet);
+    if (hasLoadedSettings && settings?.selectedWellIds !== undefined && !isUserChangingSelection && !savingSettings) {
+      // Only sync if the update was from a different user
+      if (settings.updatedBy && settings.updatedBy !== userId) {
+        try {
+          const parsed = Array.isArray(settings.selectedWellIds) 
+            ? settings.selectedWellIds 
+            : JSON.parse(settings.selectedWellIds as any);
+          // Only update if it's different (to avoid unnecessary re-renders)
+          const newSet = new Set(parsed as string[]);
+          const currentArray = Array.from(selectedWellIds).sort();
+          const newArray = Array.from(newSet).sort();
+          const isDifferent = currentArray.length !== newArray.length || 
+              currentArray.some((id, idx) => id !== newArray[idx]);
+          
+          if (isDifferent) {
+            console.log("Syncing selection from another user:", newArray.length, "wells");
+            setSelectedWellIds(newSet);
+          }
+        } catch (error) {
+          console.error("Error parsing settings:", error);
         }
-      } catch (error) {
-        console.error("Error parsing settings:", error);
       }
     }
-  }, [settings?.selectedWellIds, hasLoadedSettings, selectedWellIds]);
+  }, [settings?.selectedWellIds, settings?.updatedBy, hasLoadedSettings, isUserChangingSelection, savingSettings, userId]);
 
   // Create initial settings if they don't exist (only once on first load)
   useEffect(() => {
@@ -176,13 +186,25 @@ export default function FieldEntryPage() {
 
   // Save selected wells to InstantDB (shared across all users)
   const saveSelectedWells = async (wellIds: Set<string>) => {
-    if (!userId || savingSettings) return;
+    if (!userId) {
+      console.warn("Cannot save: no userId");
+      return;
+    }
+    if (savingSettings) {
+      console.warn("Already saving settings, skipping");
+      return;
+    }
     
+    const wellIdsArray = Array.from(wellIds); // Can be empty array
+    console.log("Saving selected wells to InstantDB:", wellIdsArray.length, "wells", wellIdsArray);
+    
+    setIsUserChangingSelection(true);
     setSavingSettings(true);
     try {
-      const wellIdsArray = Array.from(wellIds); // Can be empty array
       const now = new Date().toISOString();
       const settingsId = settings?.id || "field-entry-settings-shared";
+      
+      console.log("Using settings ID:", settingsId);
       
       await db.transact(
         db.tx.fieldEntrySettings[settingsId].update({
@@ -191,9 +213,17 @@ export default function FieldEntryPage() {
           updatedBy: userId,
         })
       );
-      console.log("Saved selected wells:", wellIdsArray.length, "wells");
+      console.log("Successfully saved selected wells:", wellIdsArray.length, "wells");
+      
+      // Wait a bit before allowing sync again to prevent race conditions
+      setTimeout(() => {
+        setIsUserChangingSelection(false);
+        console.log("User change flag cleared, sync enabled again");
+      }, 1000);
     } catch (error: any) {
       console.error("Error saving selected wells:", error);
+      setIsUserChangingSelection(false);
+      alert(`Error saving well selection: ${error.message || "Unknown error"}`);
       // Still update local state even if save fails
     } finally {
       setSavingSettings(false);
@@ -201,11 +231,14 @@ export default function FieldEntryPage() {
   };
 
   const toggleWellSelection = async (wellId: string) => {
+    console.log("Toggling well:", wellId, "Current selection size:", selectedWellIds.size);
     const newSelected = new Set(selectedWellIds);
     if (newSelected.has(wellId)) {
       newSelected.delete(wellId);
+      console.log("Deselected well:", wellId, "New selection size:", newSelected.size);
     } else {
       newSelected.add(wellId);
+      console.log("Selected well:", wellId, "New selection size:", newSelected.size);
     }
     setSelectedWellIds(newSelected);
     // Save to InstantDB (shared)
@@ -213,12 +246,14 @@ export default function FieldEntryPage() {
   };
 
   const selectAllWells = async () => {
+    console.log("Selecting all wells");
     const allIds = new Set(wells.map((w: any) => w.id));
     setSelectedWellIds(allIds);
     await saveSelectedWells(allIds);
   };
 
   const deselectAllWells = async () => {
+    console.log("Deselecting all wells");
     const emptySet = new Set<string>();
     setSelectedWellIds(emptySet);
     await saveSelectedWells(emptySet);
