@@ -83,6 +83,23 @@ export default function RunTicketsPage() {
     notes: "",
   });
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        wellDropdownRef.current &&
+        !wellDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowWellDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
   if (!userId) {
     router.push("/login");
     return null;
@@ -102,23 +119,6 @@ export default function RunTicketsPage() {
         return well ? well.name : "";
       })()
     : "";
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        wellDropdownRef.current &&
-        !wellDropdownRef.current.contains(event.target as Node)
-      ) {
-        setShowWellDropdown(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, []);
 
   const handleWellSelect = (wellId: string, wellName: string) => {
     setFormData({ ...formData, wellId });
