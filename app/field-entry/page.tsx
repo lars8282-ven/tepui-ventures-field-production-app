@@ -78,6 +78,7 @@ export default function FieldEntryPage() {
   const [showWellSelector, setShowWellSelector] = useState(false);
   const [savingWellId, setSavingWellId] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [hasLoadedSettings, setHasLoadedSettings] = useState(false);
 
   // Extract settings from InstantDB
   const settingsRaw = settingsData?.fieldEntrySettings;
@@ -87,22 +88,26 @@ export default function FieldEntryPage() {
       : (Object.values(settingsRaw)[0] as any) // Get first value if object
     : null;
 
-  // Load selected wells from InstantDB (shared across all users)
-  useMemo(() => {
-    if (wells.length > 0) {
-      if (settings?.selectedWellIds) {
+  // Load selected wells from InstantDB (shared across all users) - only once on initial load
+  useEffect(() => {
+    if (wells.length > 0 && !hasLoadedSettings) {
+      if (settings?.selectedWellIds !== undefined) {
         try {
           const parsed = Array.isArray(settings.selectedWellIds) 
             ? settings.selectedWellIds 
             : JSON.parse(settings.selectedWellIds as any);
+          // Allow empty array - respect user's deselection
           setSelectedWellIds(new Set(parsed));
+          setHasLoadedSettings(true);
         } catch {
           // If parsing fails, default to all wells
           setSelectedWellIds(new Set(wells.map((w: any) => w.id)));
+          setHasLoadedSettings(true);
         }
       } else {
         // Default to all wells if no settings exist
         setSelectedWellIds(new Set(wells.map((w: any) => w.id)));
+        setHasLoadedSettings(true);
       }
       
       // Initialize entries
@@ -110,18 +115,39 @@ export default function FieldEntryPage() {
         setEntries(wells.map((w: any) => ({ wellId: w.id })));
       }
     }
-  }, [wells, entries.length, settings]);
+  }, [wells.length, settings, hasLoadedSettings, entries.length]);
 
-  // Create initial settings if they don't exist
+  // Update selection when settings change (for real-time sync)
   useEffect(() => {
-    if (wells.length > 0 && !settings && userId && !savingSettings) {
-      const allWellIds = wells.map((w: any) => w.id);
+    if (hasLoadedSettings && settings?.selectedWellIds !== undefined) {
+      try {
+        const parsed = Array.isArray(settings.selectedWellIds) 
+          ? settings.selectedWellIds 
+          : JSON.parse(settings.selectedWellIds as any);
+        // Only update if it's different (to avoid unnecessary re-renders)
+        const newSet = new Set(parsed as string[]);
+        if (newSet.size !== selectedWellIds.size || 
+            Array.from(newSet).some((id: string) => !selectedWellIds.has(id))) {
+          setSelectedWellIds(newSet);
+        }
+      } catch (error) {
+        console.error("Error parsing settings:", error);
+      }
+    }
+  }, [settings?.selectedWellIds, hasLoadedSettings, selectedWellIds]);
+
+  // Create initial settings if they don't exist (only once on first load)
+  useEffect(() => {
+    if (wells.length > 0 && !settings && userId && !savingSettings && hasLoadedSettings && selectedWellIds.size > 0) {
+      // Only create initial settings after we've loaded and have a selection
+      // This prevents creating settings with empty array on first load
+      const wellIdsArray = Array.from(selectedWellIds);
       const now = new Date().toISOString();
       
       setSavingSettings(true);
       db.transact(
         db.tx.fieldEntrySettings["field-entry-settings-shared"].update({
-          selectedWellIds: allWellIds,
+          selectedWellIds: wellIdsArray,
           updatedAt: now,
           updatedBy: userId,
         })
@@ -131,7 +157,7 @@ export default function FieldEntryPage() {
         setSavingSettings(false);
       });
     }
-  }, [wells.length, settings, userId, savingSettings]);
+  }, [wells.length, settings, userId, savingSettings, hasLoadedSettings, selectedWellIds.size]);
 
   if (!userId) {
     router.push("/login");
@@ -154,7 +180,7 @@ export default function FieldEntryPage() {
     
     setSavingSettings(true);
     try {
-      const wellIdsArray = Array.from(wellIds);
+      const wellIdsArray = Array.from(wellIds); // Can be empty array
       const now = new Date().toISOString();
       const settingsId = settings?.id || "field-entry-settings-shared";
       
@@ -165,6 +191,7 @@ export default function FieldEntryPage() {
           updatedBy: userId,
         })
       );
+      console.log("Saved selected wells:", wellIdsArray.length, "wells");
     } catch (error: any) {
       console.error("Error saving selected wells:", error);
       // Still update local state even if save fails
