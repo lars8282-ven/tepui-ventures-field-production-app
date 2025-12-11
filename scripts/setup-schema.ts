@@ -1,7 +1,7 @@
 // This script creates initial entities to bootstrap the schema
 // Run with: npx tsx scripts/setup-schema.ts
 
-import { init } from "@instantdb/react";
+import { init, id } from "@instantdb/react";
 import { db } from "../lib/instant";
 
 async function setupSchema() {
@@ -9,7 +9,7 @@ async function setupSchema() {
   
   try {
     // Create a test well
-    const wellId = db.id();
+    const wellId = id();
     db.transact(
       db.tx.wells[wellId].update({
         name: "Test Well",

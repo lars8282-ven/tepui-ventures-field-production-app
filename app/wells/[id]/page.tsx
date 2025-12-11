@@ -30,7 +30,7 @@ export default function WellDetailPage({
       ? wellsRaw 
       : Object.values(wellsRaw)
     : [];
-  const well = allWells.find((w: any) => w.id === id);
+  const well = allWells.find((w: any) => w.id === id) as any;
 
   // Extract readings and gaugings
   const readingsRaw = readingsData?.meterReadings;
@@ -208,7 +208,7 @@ export default function WellDetailPage({
             <p className="text-gray-600 text-sm">No readings yet</p>
           ) : (
             <div className="space-y-3">
-              {readings.map((reading) => (
+              {readings.map((reading: any) => (
                 <div
                   key={reading.id}
                   className="border-b border-gray-200 pb-3 last:border-0"
@@ -248,7 +248,7 @@ export default function WellDetailPage({
             <p className="text-gray-600 text-sm">No gaugings yet</p>
           ) : (
             <div className="space-y-3">
-              {gaugings.map((gauging) => (
+              {gaugings.map((gauging: any) => (
                 <div
                   key={gauging.id}
                   className="border-b border-gray-200 pb-3 last:border-0"

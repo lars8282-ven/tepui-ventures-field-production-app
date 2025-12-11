@@ -1,8 +1,6 @@
 // Docs: https://www.instantdb.com/docs/permissions
 
-import type { InstantRules } from "@instantdb/react";
-
-const rules = {
+const rules: any = {
   /**
    * Welcome to Instant's permission system!
    * Right now your rules are empty. To start filling them in, check out the docs:
@@ -19,6 +17,6 @@ const rules = {
    *   bind: ["isOwner", "auth.id != null && auth.id == data.ownerId"],
    * },
    */
-} satisfies InstantRules;
+};
 
 export default rules;

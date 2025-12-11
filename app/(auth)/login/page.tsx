@@ -33,7 +33,9 @@ export default function LoginPage() {
       await sendMagicCode(email);
       setCodeSent(true);
     } catch (err: any) {
-      setError(err.message || "Failed to send magic code");
+      console.error("Magic code error:", err);
+      const errorMessage = err?.message || "Failed to send magic code";
+      setError(errorMessage);
     } finally {
       setSendingCode(false);
     }
@@ -118,7 +120,7 @@ export default function LoginPage() {
             </div>
 
             <div className="text-center text-sm text-gray-600">
-              <p>We'll send a magic code to your email to sign in.</p>
+              <p>We&apos;ll send a magic code to your email to sign in.</p>
             </div>
           </form>
         ) : (

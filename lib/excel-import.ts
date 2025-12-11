@@ -85,7 +85,7 @@ export function extractHeaders(file: File): Promise<string[]> {
           // Handle Excel files (.xlsx, .xls)
           const data = result instanceof ArrayBuffer 
             ? new Uint8Array(result) 
-            : new Uint8Array(result as ArrayBuffer);
+            : new Uint8Array(result as unknown as ArrayBuffer);
           workbook = XLSX.read(data, { type: "array" });
         }
 
@@ -153,7 +153,7 @@ export function parseExcelFile(file: File): Promise<WellImportRow[]> {
           // Handle Excel files (.xlsx, .xls)
           const data = result instanceof ArrayBuffer 
             ? new Uint8Array(result) 
-            : new Uint8Array(result as ArrayBuffer);
+            : new Uint8Array(result as unknown as ArrayBuffer);
           workbook = XLSX.read(data, { type: "array" });
         }
 

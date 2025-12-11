@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { id } from "@instantdb/react";
 import { db } from "@/lib/instant";
 import { useRouter } from "next/navigation";
@@ -42,6 +42,11 @@ export default function FieldEntryPage() {
     meterReadings: {},
   });
 
+  // Query for shared field entry settings
+  const { data: settingsData } = db.useQuery({
+    fieldEntrySettings: {},
+  });
+
   const wellsRaw = wellsData?.wells;
   const wells = wellsRaw
     ? Array.isArray(wellsRaw)
@@ -71,21 +76,32 @@ export default function FieldEntryPage() {
   const [expandedWells, setExpandedWells] = useState<Set<string>>(new Set());
   const [selectedWellIds, setSelectedWellIds] = useState<Set<string>>(new Set());
   const [showWellSelector, setShowWellSelector] = useState(false);
+  const [savingWellId, setSavingWellId] = useState<string | null>(null);
+  const [savingSettings, setSavingSettings] = useState(false);
 
-  // Load selected wells from localStorage on mount
+  // Extract settings from InstantDB
+  const settingsRaw = settingsData?.fieldEntrySettings;
+  const settings = settingsRaw
+    ? Array.isArray(settingsRaw)
+      ? (settingsRaw[0] as any) // Get first (should only be one)
+      : (Object.values(settingsRaw)[0] as any) // Get first value if object
+    : null;
+
+  // Load selected wells from InstantDB (shared across all users)
   useMemo(() => {
     if (wells.length > 0) {
-      const stored = localStorage.getItem('fieldEntry_selectedWells');
-      if (stored) {
+      if (settings?.selectedWellIds) {
         try {
-          const parsed = JSON.parse(stored);
+          const parsed = Array.isArray(settings.selectedWellIds) 
+            ? settings.selectedWellIds 
+            : JSON.parse(settings.selectedWellIds as any);
           setSelectedWellIds(new Set(parsed));
         } catch {
           // If parsing fails, default to all wells
           setSelectedWellIds(new Set(wells.map((w: any) => w.id)));
         }
       } else {
-        // Default to all wells
+        // Default to all wells if no settings exist
         setSelectedWellIds(new Set(wells.map((w: any) => w.id)));
       }
       
@@ -94,7 +110,28 @@ export default function FieldEntryPage() {
         setEntries(wells.map((w: any) => ({ wellId: w.id })));
       }
     }
-  }, [wells, entries.length]);
+  }, [wells, entries.length, settings]);
+
+  // Create initial settings if they don't exist
+  useEffect(() => {
+    if (wells.length > 0 && !settings && userId && !savingSettings) {
+      const allWellIds = wells.map((w: any) => w.id);
+      const now = new Date().toISOString();
+      
+      setSavingSettings(true);
+      db.transact(
+        db.tx.fieldEntrySettings["field-entry-settings-shared"].update({
+          selectedWellIds: allWellIds,
+          updatedAt: now,
+          updatedBy: userId,
+        })
+      ).catch((error: any) => {
+        console.error("Error creating initial settings:", error);
+      }).finally(() => {
+        setSavingSettings(false);
+      });
+    }
+  }, [wells.length, settings, userId, savingSettings]);
 
   if (!userId) {
     router.push("/login");
@@ -111,7 +148,32 @@ export default function FieldEntryPage() {
     setExpandedWells(newExpanded);
   };
 
-  const toggleWellSelection = (wellId: string) => {
+  // Save selected wells to InstantDB (shared across all users)
+  const saveSelectedWells = async (wellIds: Set<string>) => {
+    if (!userId || savingSettings) return;
+    
+    setSavingSettings(true);
+    try {
+      const wellIdsArray = Array.from(wellIds);
+      const now = new Date().toISOString();
+      const settingsId = settings?.id || "field-entry-settings-shared";
+      
+      await db.transact(
+        db.tx.fieldEntrySettings[settingsId].update({
+          selectedWellIds: wellIdsArray,
+          updatedAt: now,
+          updatedBy: userId,
+        })
+      );
+    } catch (error: any) {
+      console.error("Error saving selected wells:", error);
+      // Still update local state even if save fails
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const toggleWellSelection = async (wellId: string) => {
     const newSelected = new Set(selectedWellIds);
     if (newSelected.has(wellId)) {
       newSelected.delete(wellId);
@@ -119,19 +181,20 @@ export default function FieldEntryPage() {
       newSelected.add(wellId);
     }
     setSelectedWellIds(newSelected);
-    // Save to localStorage
-    localStorage.setItem('fieldEntry_selectedWells', JSON.stringify(Array.from(newSelected)));
+    // Save to InstantDB (shared)
+    await saveSelectedWells(newSelected);
   };
 
-  const selectAllWells = () => {
+  const selectAllWells = async () => {
     const allIds = new Set(wells.map((w: any) => w.id));
     setSelectedWellIds(allIds);
-    localStorage.setItem('fieldEntry_selectedWells', JSON.stringify(Array.from(allIds)));
+    await saveSelectedWells(allIds);
   };
 
-  const deselectAllWells = () => {
-    setSelectedWellIds(new Set());
-    localStorage.setItem('fieldEntry_selectedWells', JSON.stringify([]));
+  const deselectAllWells = async () => {
+    const emptySet = new Set<string>();
+    setSelectedWellIds(emptySet);
+    await saveSelectedWells(emptySet);
   };
 
   // Filter wells based on selection
@@ -153,8 +216,6 @@ export default function FieldEntryPage() {
       entry.comment
     );
   };
-
-  const [savingWellId, setSavingWellId] = useState<string | null>(null);
 
   const checkExistingData = (wellId: string, dateToCheck: string) => {
     const dateKey = dateToCheck.split('T')[0];
@@ -746,7 +807,7 @@ export default function FieldEntryPage() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {displayedWells.map((well: any) => {
-                    const entry = entries.find(e => e.wellId === well.id) || { wellId: well.id };
+                    const entry: WellEntry = entries.find(e => e.wellId === well.id) || { wellId: well.id };
                     const hasData = hasAnyData(entry);
 
                     return (

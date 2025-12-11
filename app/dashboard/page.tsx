@@ -87,17 +87,17 @@ export default function DashboardPage() {
         : [],
     [baselineRaw]
   );
-  const currentBaseline = baselines.length > 0 ? baselines[0] : null;
+  const currentBaseline = baselines.length > 0 ? (baselines[0] as any) : null;
   const baselineStructuredData = currentBaseline?.structuredData;
 
   // Calculate today's values
   const todayOilRate = useMemo(
-    () => calculateOilRateTotal(wells, gaugings, todayKey),
+    () => calculateOilRateTotal(wells as any[], gaugings as any[], todayKey),
     [wells, gaugings, todayKey]
   );
 
   const todayGasRate = useMemo(
-    () => calculateGasRateTotal(wells, readings, todayKey),
+    () => calculateGasRateTotal(wells as any[], readings as any[], todayKey),
     [wells, readings, todayKey]
   );
 
@@ -139,20 +139,20 @@ export default function DashboardPage() {
   );
 
   const { count: wellsOnlineCount, percentage: wellsOnlinePercentage } = useMemo(
-    () => getWellsOnline(wells, gaugings, readings),
+    () => getWellsOnline(wells as any[], gaugings as any[], readings as any[]),
     [wells, gaugings, readings]
   );
 
   // Get daily production data for the month
   const dailyData = useMemo(
-    () => getDailyProductionData(wells, gaugings, readings, startDate, endDate),
+    () => getDailyProductionData(wells as any[], gaugings as any[], readings as any[], startDate, endDate),
     [wells, gaugings, readings, startDate, endDate]
   );
 
   // Calculate monthly averages using inventory change method
   // (Total Inventory Today - Total Inventory at Start) / Days
   const monthlyAvgOilRate = useMemo(() => {
-    return calculateOilRateFromInventoryChange(wells, gaugings, startDate, endDate);
+    return calculateOilRateFromInventoryChange(wells as any[], gaugings as any[], startDate, endDate);
   }, [wells, gaugings, startDate, endDate]);
 
   const monthlyAvgGasRate = useMemo(() => {

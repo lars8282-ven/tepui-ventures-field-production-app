@@ -22,7 +22,7 @@ export default function GaugingPage() {
         order: { createdAt: "desc" },
       },
     },
-  });
+  } as any);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     wellId: "",
@@ -69,8 +69,8 @@ export default function GaugingPage() {
   };
 
   const getWellName = (wellId: string) => {
-    const well = wells.find((w) => w.id === wellId);
-    return well ? `${well.wellNumber} - ${well.name}` : "Unknown";
+    const well = wells.find((w: any) => w.id === wellId);
+    return well ? `${(well as any).wellNumber} - ${(well as any).name}` : "Unknown";
   };
 
   return (
@@ -120,7 +120,7 @@ export default function GaugingPage() {
                   }
                 >
                   <option value="">Select a well</option>
-                  {wells.map((well) => (
+                  {wells.map((well: any) => (
                     <option key={well.id} value={well.id}>
                       {well.wellNumber} - {well.name}
                     </option>
@@ -228,7 +228,7 @@ export default function GaugingPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {gaugings.map((gauging) => (
+                {gaugings.map((gauging: any) => (
                   <tr key={gauging.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {getWellName(gauging.wellId)}

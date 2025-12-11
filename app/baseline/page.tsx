@@ -17,11 +17,6 @@ export default function BaselinePage() {
     baselineUnderwriting: {},
   });
 
-  if (!userId) {
-    router.push("/login");
-    return null;
-  }
-
   // Extract baseline data
   const baselineRaw = baselineData?.baselineUnderwriting;
   const baselines = baselineRaw
@@ -31,13 +26,19 @@ export default function BaselinePage() {
     : [];
 
   // Get the most recent baseline (or first one if multiple)
-  const currentBaseline = baselines.length > 0 ? baselines[0] : null;
+  const currentBaseline = baselines.length > 0 ? (baselines[0] as any) : null;
 
   // Prepare chart data
   const productionData = useMemo(() => {
-    if (!currentBaseline?.productionForecast) return [];
-    return currentBaseline.productionForecast;
+    if (!currentBaseline) return [];
+    const baseline = currentBaseline as any;
+    return baseline?.productionForecast || [];
   }, [currentBaseline]);
+
+  if (!userId) {
+    router.push("/login");
+    return null;
+  }
 
 
   return (

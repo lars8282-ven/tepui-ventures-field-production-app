@@ -134,7 +134,7 @@ export default function ImportGaugingPage() {
           Your Excel file should have:
         </p>
         <ul className="text-sm text-gray-700 list-disc list-inside space-y-1 mb-3">
-          <li><strong>Multiple sheets</strong> - One sheet per day (sheet name in format "MMDDYY" or "MMDYY", e.g., "112225" = Nov 22, 2025, "12125" = Dec 1, 2025)</li>
+          <li><strong>Multiple sheets</strong> - One sheet per day (sheet name in format &quot;MMDDYY&quot; or &quot;MMDYY&quot;, e.g., &quot;112225&quot; = Nov 22, 2025, &quot;12125&quot; = Dec 1, 2025)</li>
           <li><strong>Well Number/API</strong> column - To match wells in the system (matches by API number, Well Name #1, or Well Name #2)</li>
           <li><strong>Tank</strong> column - Which tank number is being strapped (1, 2, 3, etc.)</li>
           <li><strong>Oil (ft)</strong> column - Feet measurement for the strapped tank</li>

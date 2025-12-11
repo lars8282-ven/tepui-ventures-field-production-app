@@ -33,14 +33,6 @@ interface DashboardRatesChartProps {
 }
 
 export function DashboardRatesChart({ data, baselineData = [] }: DashboardRatesChartProps) {
-  if (data.length === 0) {
-    return (
-      <div className="bg-white shadow rounded-lg p-12 text-center">
-        <p className="text-gray-600">No rate data available for chart.</p>
-      </div>
-    );
-  }
-
   // Merge baseline data with chart data
   // Sort by date to ensure proper ordering
   // Use useMemo to create a new array reference when data changes
@@ -59,6 +51,14 @@ export function DashboardRatesChart({ data, baselineData = [] }: DashboardRatesC
       };
     });
   }, [data, baselineData]);
+
+  if (data.length === 0) {
+    return (
+      <div className="bg-white shadow rounded-lg p-12 text-center">
+        <p className="text-gray-600">No rate data available for chart.</p>
+      </div>
+    );
+  }
 
   // Check if we have any baseline data to display
   const hasBaselineData = chartDataWithBaseline.some(

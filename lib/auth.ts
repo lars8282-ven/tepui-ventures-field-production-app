@@ -13,7 +13,17 @@ export async function sendMagicCode(email: string) {
   if (!isValidEmailDomain(email)) {
     throw new Error(`Email must be from ${ALLOWED_EMAIL_DOMAIN} domain`);
   }
-  return await db.auth.sendMagicCode({ email });
+  
+  try {
+    return await db.auth.sendMagicCode({ email });
+  } catch (error: any) {
+    console.error("Error sending magic code:", error);
+    // Provide more helpful error messages
+    if (error?.message) {
+      throw new Error(error.message);
+    }
+    throw new Error("Failed to send magic code. Please check your InstantDB configuration and ensure NEXT_PUBLIC_INSTANT_APP_ID is set correctly.");
+  }
 }
 
 /**

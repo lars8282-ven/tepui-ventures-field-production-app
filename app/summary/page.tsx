@@ -231,24 +231,24 @@ export default function SummaryPage() {
       {/* Oil Inventory Tab */}
       {activeTab === "oil" && (
         <div className="space-y-6">
-          <OilInventoryTable wells={wells} gaugings={gaugings} selectedDate={selectedDate} />
-          <OilInventoryChart wells={wells} gaugings={gaugings} />
+          <OilInventoryTable wells={wells as any[]} gaugings={gaugings as any[]} selectedDate={selectedDate} />
+          <OilInventoryChart wells={wells as any[]} gaugings={gaugings as any[]} />
         </div>
       )}
 
       {/* Gas Summary Tab */}
       {activeTab === "gas" && (
         <div className="space-y-6">
-          <GasSummaryTable wells={wells} readings={readings} selectedDate={selectedDate} />
-          <GasRateChart wells={wells} readings={readings} />
+          <GasSummaryTable wells={wells as any[]} readings={readings as any[]} selectedDate={selectedDate} />
+          <GasRateChart wells={wells as any[]} readings={readings as any[]} />
         </div>
       )}
 
       {/* Others Summary Tab */}
       {activeTab === "others" && (
         <div className="space-y-6">
-          <OthersSummaryTable wells={wells} readings={readings} selectedDate={selectedDate} />
-          <OthersSummaryChart wells={wells} readings={readings} />
+          <OthersSummaryTable wells={wells as any[]} readings={readings as any[]} selectedDate={selectedDate} />
+          <OthersSummaryChart wells={wells as any[]} readings={readings as any[]} />
         </div>
       )}
     </div>

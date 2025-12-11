@@ -88,39 +88,39 @@ export default function AnalyticsPage() {
     const filteredReadings =
       selectedWell === "all"
         ? readings
-        : readings.filter((r) => r.wellId === selectedWell);
+        : readings.filter((r: any) => r.wellId === selectedWell);
 
     const filteredGaugings =
       selectedWell === "all"
         ? gaugings
-        : gaugings.filter((g) => g.wellId === selectedWell);
+        : gaugings.filter((g: any) => g.wellId === selectedWell);
 
     const wellBaselines =
       selectedWell === "all"
         ? baselines
-        : baselines.filter((b) => b.wellId === selectedWell);
+        : baselines.filter((b: any) => b.wellId === selectedWell);
 
-    const comparisons = wellBaselines.map((baseline) => {
+    const comparisons = wellBaselines.map((baseline: any) => {
       let actual = 0;
       let count = 0;
 
       if (baseline.type === "meter") {
         const relevantReadings = filteredReadings.filter(
-          (r) => r.meterType === baseline.metricName || baseline.metricName === ""
+          (r: any) => r.meterType === baseline.metricName || baseline.metricName === ""
         );
         if (relevantReadings.length > 0) {
           actual =
-            relevantReadings.reduce((sum, r) => sum + r.value, 0) /
+            relevantReadings.reduce((sum: number, r: any) => sum + r.value, 0) /
             relevantReadings.length;
           count = relevantReadings.length;
         }
       } else if (baseline.type === "tank") {
         const relevantGaugings = filteredGaugings.filter(
-          (g) => g.tankNumber === baseline.metricName || baseline.metricName === ""
+          (g: any) => g.tankNumber === baseline.metricName || baseline.metricName === ""
         );
         if (relevantGaugings.length > 0) {
           actual =
-            relevantGaugings.reduce((sum, g) => sum + g.level, 0) /
+            relevantGaugings.reduce((sum: number, g: any) => sum + g.level, 0) /
             relevantGaugings.length;
           count = relevantGaugings.length;
         }
@@ -138,7 +138,7 @@ export default function AnalyticsPage() {
         comparison,
         count,
         wellName:
-          wells.find((w) => w.id === baseline.wellId)?.name || "Unknown",
+          wells.find((w: any) => w.id === baseline.wellId)?.name || "Unknown",
       };
     });
 
@@ -182,7 +182,7 @@ export default function AnalyticsPage() {
               onChange={(e) => setSelectedWell(e.target.value)}
             >
               <option value="all">All Wells</option>
-              {wells.map((well) => (
+              {wells.map((well: any) => (
                 <option key={well.id} value={well.id}>
                   {well.wellNumber} - {well.name}
                 </option>
@@ -239,7 +239,7 @@ export default function AnalyticsPage() {
                   }
                 >
                   <option value="">Select a well</option>
-                  {wells.map((well) => (
+                  {wells.map((well: any) => (
                     <option key={well.id} value={well.id}>
                       {well.wellNumber} - {well.name}
                     </option>

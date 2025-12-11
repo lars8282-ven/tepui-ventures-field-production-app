@@ -13,7 +13,7 @@ if (!APP_ID) {
 export const db = init({
   appId: APP_ID,
   rules,
-});
+} as any);
 
 // Export a type placeholder for now
 export type Schema = any;
