@@ -81,11 +81,11 @@ export default function FieldEntryPage() {
   const [hasLoadedSettings, setHasLoadedSettings] = useState(false);
   const [isUserChangingSelection, setIsUserChangingSelection] = useState(false);
 
-  // Extract settings from InstantDB
+  // Extract settings from InstantDB - always use the first one if multiple exist
   const settingsRaw = settingsData?.fieldEntrySettings;
   const settings = settingsRaw
     ? Array.isArray(settingsRaw)
-      ? (settingsRaw[0] as any) // Get first (should only be one)
+      ? (settingsRaw[0] as any) // Get first (should only be one, but use first if multiple)
       : (Object.values(settingsRaw)[0] as any) // Get first value if object
     : null;
 
@@ -153,10 +153,11 @@ export default function FieldEntryPage() {
       // This prevents creating settings with empty array on first load
       const wellIdsArray = Array.from(selectedWellIds);
       const now = new Date().toISOString();
+      const newSettingsId = id();
       
       setSavingSettings(true);
       db.transact(
-        db.tx.fieldEntrySettings["field-entry-settings-shared"].update({
+        db.tx.fieldEntrySettings[newSettingsId].update({
           selectedWellIds: wellIdsArray,
           updatedAt: now,
           updatedBy: userId,
@@ -202,17 +203,35 @@ export default function FieldEntryPage() {
     setSavingSettings(true);
     try {
       const now = new Date().toISOString();
-      const settingsId = settings?.id || "field-entry-settings-shared";
       
-      console.log("Using settings ID:", settingsId);
+      // Use existing settings ID if available, otherwise create new one
+      let settingsId: string;
+      if (settings?.id) {
+        settingsId = settings.id;
+        console.log("Using existing settings ID:", settingsId);
+        
+        // Update existing settings
+        await db.transact(
+          db.tx.fieldEntrySettings[settingsId].update({
+            selectedWellIds: wellIdsArray,
+            updatedAt: now,
+            updatedBy: userId,
+          })
+        );
+      } else {
+        // Create new settings record
+        settingsId = id();
+        console.log("Creating new settings with ID:", settingsId);
+        
+        await db.transact(
+          db.tx.fieldEntrySettings[settingsId].update({
+            selectedWellIds: wellIdsArray,
+            updatedAt: now,
+            updatedBy: userId,
+          })
+        );
+      }
       
-      await db.transact(
-        db.tx.fieldEntrySettings[settingsId].update({
-          selectedWellIds: wellIdsArray,
-          updatedAt: now,
-          updatedBy: userId,
-        })
-      );
       console.log("Successfully saved selected wells:", wellIdsArray.length, "wells");
       
       // Wait a bit before allowing sync again to prevent race conditions
