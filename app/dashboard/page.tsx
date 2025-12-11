@@ -185,19 +185,17 @@ export default function DashboardPage() {
         boe: d.boe,
       }));
       
-      // Debug: Check Dec 9th data
+      // Debug: Check date range
       if (process.env.NODE_ENV === "development") {
-        const dec9Daily = dailyData.find((d) => d.date === "2025-12-09");
-        const dec9Chart = chartData.find((d) => d.date === "2025-12-09");
-        if (dec9Daily) {
-          console.log("Dashboard - Dec 9th in dailyData - date:", dec9Daily.date, "gasRate:", dec9Daily.gasRate, "oilRate:", dec9Daily.oilRate, "boe:", dec9Daily.boe);
+        const todayKey = format(new Date(), "yyyy-MM-dd");
+        const lastDate = chartData.length > 0 ? chartData[chartData.length - 1].date : "none";
+        const firstDate = chartData.length > 0 ? chartData[0].date : "none";
+        console.log("Dashboard - Chart data range:", firstDate, "to", lastDate, "Total:", chartData.length, "Today:", todayKey);
+        const todayInData = chartData.find((d) => d.date === todayKey);
+        if (todayInData) {
+          console.log("Dashboard - Today found in chart data:", todayInData.date);
         } else {
-          console.log("Dashboard - Dec 9th NOT FOUND in dailyData. Total entries:", dailyData.length, "Date range:", dailyData[0]?.date, "to", dailyData[dailyData.length - 1]?.date);
-        }
-        if (dec9Chart) {
-          console.log("Dashboard - Dec 9th in ratesChartData - date:", dec9Chart.date, "gasRate:", dec9Chart.gasRate, "oilRate:", dec9Chart.oilRate, "boe:", dec9Chart.boe);
-        } else {
-          console.log("Dashboard - Dec 9th NOT FOUND in ratesChartData. Total entries:", chartData.length);
+          console.log("Dashboard - Today NOT found in chart data. Last date is:", lastDate);
         }
       }
       

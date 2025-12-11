@@ -281,7 +281,7 @@ export function BaselineProductionChart({ data, structuredData }: BaselineProduc
               formatter={(value: any, name: string) => {
                 if (typeof value === "number") {
                   const unit = name.includes("Oil") ? " Bbl/day" : " Mcf/day";
-                  return [value.toLocaleString(undefined, { maximumFractionDigits: 2 }) + unit, name];
+                  return [value.toLocaleString(undefined, { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + unit, name];
                 }
                 return [String(value), name];
               }}

@@ -15,6 +15,16 @@ type VisibleColumns = {
   county: boolean;
   state: boolean;
   status: boolean;
+  api10: boolean;
+  api14Alt: boolean;
+  tankFactor: boolean;
+  wi: boolean;
+  nri: boolean;
+  swd: boolean;
+  sec: boolean;
+  twn: boolean;
+  rng: boolean;
+  leaseDescription: boolean;
   oilRate: boolean;
   gasRate: boolean;
   waterRate: boolean;
@@ -50,6 +60,16 @@ export default function WellsPage() {
     county: false,
     state: false,
     status: true,
+    api10: false,
+    api14Alt: false,
+    tankFactor: false,
+    wi: false,
+    nri: false,
+    swd: false,
+    sec: false,
+    twn: false,
+    rng: false,
+    leaseDescription: false,
     oilRate: false,
     gasRate: false,
     waterRate: false,
@@ -405,6 +425,56 @@ export default function WellsPage() {
                         Status
                       </th>
                     )}
+                    {visibleColumns.api10 && (
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        API 10
+                      </th>
+                    )}
+                    {visibleColumns.api14Alt && (
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        API 14 ALT
+                      </th>
+                    )}
+                    {visibleColumns.tankFactor && (
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Tank Factor
+                      </th>
+                    )}
+                    {visibleColumns.wi && (
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        WI
+                      </th>
+                    )}
+                    {visibleColumns.nri && (
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        NRI
+                      </th>
+                    )}
+                    {visibleColumns.swd && (
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        SWD
+                      </th>
+                    )}
+                    {visibleColumns.sec && (
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Section
+                      </th>
+                    )}
+                    {visibleColumns.twn && (
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Township
+                      </th>
+                    )}
+                    {visibleColumns.rng && (
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Range
+                      </th>
+                    )}
+                    {visibleColumns.leaseDescription && (
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Lease Description
+                      </th>
+                    )}
                     {visibleColumns.oilRate && (
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Oil (BOPD)
@@ -483,6 +553,56 @@ export default function WellsPage() {
                             >
                               {wellStatuses[well.id] || "inactive"}
                             </span>
+                          </td>
+                        )}
+                        {visibleColumns.api10 && (
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {metadata.api10 || "-"}
+                          </td>
+                        )}
+                        {visibleColumns.api14Alt && (
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {metadata.api14Alt || "-"}
+                          </td>
+                        )}
+                        {visibleColumns.tankFactor && (
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {metadata.tankFactor || "-"}
+                          </td>
+                        )}
+                        {visibleColumns.wi && (
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {metadata.wi || "-"}
+                          </td>
+                        )}
+                        {visibleColumns.nri && (
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {metadata.nri || "-"}
+                          </td>
+                        )}
+                        {visibleColumns.swd && (
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {metadata.swd || "-"}
+                          </td>
+                        )}
+                        {visibleColumns.sec && (
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {metadata.sec || "-"}
+                          </td>
+                        )}
+                        {visibleColumns.twn && (
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {metadata.twn || "-"}
+                          </td>
+                        )}
+                        {visibleColumns.rng && (
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {metadata.rng || "-"}
+                          </td>
+                        )}
+                        {visibleColumns.leaseDescription && (
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {metadata.leaseDescription || "-"}
                           </td>
                         )}
                         {visibleColumns.oilRate && (

@@ -51,8 +51,21 @@ export function GasRateChart({ wells, readings }: GasRateChartProps) {
     readings.forEach((reading) => {
       const wellId = reading.wellId;
       const meterType = reading.meterType || "";
-      const date = new Date(reading.timestamp || reading.createdAt);
-      const dateKey = format(date, "yyyy-MM-dd");
+      // Extract date key directly from ISO string to avoid timezone issues
+      const timestampStr = reading.timestamp || reading.createdAt || "";
+      let dateKey = "";
+      if (typeof timestampStr === "string" && timestampStr.includes("T")) {
+        // Extract date part directly from ISO string (YYYY-MM-DD)
+        dateKey = timestampStr.split("T")[0];
+      } else {
+        // Fallback to date formatting if not ISO format
+        try {
+          dateKey = format(new Date(timestampStr), "yyyy-MM-dd");
+        } catch {
+          // Skip invalid dates
+          return;
+        }
+      }
 
       if (!dataByDate[dateKey]) {
         dataByDate[dateKey] = {};
@@ -90,13 +103,8 @@ export function GasRateChart({ wells, readings }: GasRateChartProps) {
       }
     });
 
-    // Build last known values for forward-filling
-    const lastKnownValues: Record<string, { gasRate: number; instantGasRate: number }> = {};
-    wells.forEach((well) => {
-      lastKnownValues[well.id] = { gasRate: 0, instantGasRate: 0 };
-    });
-
-    // Convert to array format and calculate totals for each date with forward-filling
+    // Convert to array format and calculate totals for each date
+    // Only sum values for wells that actually have readings on that date (no forward-filling)
     const dates = Object.keys(dataByDate).sort();
     const data: ChartDataPoint[] = dates.map((date) => {
       const dateData = dataByDate[date];
@@ -104,32 +112,15 @@ export function GasRateChart({ wells, readings }: GasRateChartProps) {
       let totalInstantGasRate = 0;
 
       // Sum all rates across all wells for this date (separate totals)
-      // Use forward-filled values (last known) if no data for this date
+      // Only include wells that have actual readings on this date (no forward-filling)
       wells.forEach((well) => {
         const dateWellData = dateData[well.id];
-        let gasRate = 0;
-        let instantGasRate = 0;
-
+        
         if (dateWellData) {
-          gasRate = dateWellData.gasRate || lastKnownValues[well.id]?.gasRate || 0;
-          instantGasRate = dateWellData.instantGasRate || lastKnownValues[well.id]?.instantGasRate || 0;
-          
-          // Update last known if we have actual data
-          if (dateWellData.gasRate > 0) {
-            lastKnownValues[well.id].gasRate = dateWellData.gasRate;
-          }
-          if (dateWellData.instantGasRate > 0) {
-            lastKnownValues[well.id].instantGasRate = dateWellData.instantGasRate;
-          }
-        } else {
-          // Forward-fill: use last known values
-          gasRate = lastKnownValues[well.id]?.gasRate || 0;
-          instantGasRate = lastKnownValues[well.id]?.instantGasRate || 0;
+          // Add values for this well on this date (including 0 values to match table logic)
+          totalGasRate += dateWellData.gasRate || 0;
+          totalInstantGasRate += dateWellData.instantGasRate || 0;
         }
-
-        // Add to separate totals
-        totalGasRate += gasRate;
-        totalInstantGasRate += instantGasRate;
       });
 
       return {
@@ -166,7 +157,15 @@ export function GasRateChart({ wells, readings }: GasRateChartProps) {
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis
             dataKey="date"
-            tickFormatter={(value) => format(new Date(value), "MMM d")}
+            tickFormatter={(value) => {
+              // value is "2025-12-08" - format directly without Date objects
+              if (typeof value === 'string' && value.includes('-')) {
+                const [year, month, day] = value.split('-');
+                const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                return `${monthNames[parseInt(month) - 1]} ${parseInt(day)}`;
+              }
+              return value;
+            }}
           />
           <YAxis label={{ value: "Gas Rate (MCF)", angle: -90, position: "insideLeft" }} />
           <Tooltip
@@ -175,10 +174,18 @@ export function GasRateChart({ wells, readings }: GasRateChartProps) {
               border: "1px solid #ccc",
               borderRadius: "4px",
             }}
-            labelFormatter={(value) => format(new Date(value), "MMM d, yyyy")}
+            labelFormatter={(value) => {
+              // value is "2025-12-08" - format directly without Date objects
+              if (typeof value === 'string' && value.includes('-')) {
+                const [year, month, day] = value.split('-');
+                const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                return `${monthNames[parseInt(month) - 1]} ${parseInt(day)}, ${year}`;
+              }
+              return value;
+            }}
             formatter={(value: any, name: string) => [
               `${Number(value).toFixed(1)} MCF`,
-              name === "totalGasRate" ? "Gas Rate" : "Instant Gas Rate",
+              name,
             ]}
           />
           <Line

@@ -30,7 +30,9 @@ export function calculateRate(
   daysDiff: number
 ): number | null {
   if (!previous || daysDiff <= 0) return null;
-  return (current - previous) / daysDiff;
+  const rate = (current - previous) / daysDiff;
+  // Round to 1 decimal place to avoid floating point precision issues
+  return Math.round(rate * 10) / 10;
 }
 
 /**

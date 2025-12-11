@@ -19,7 +19,7 @@ export interface GaugingRow {
 
 export interface ParsedGaugingSheet {
   sheetName: string;
-  date: Date | null;
+  date: string | null; // ISO date string to avoid timezone conversion
   rows: GaugingRow[];
 }
 
@@ -100,7 +100,8 @@ export function parseGaugingLog(file: File): Promise<ParsedGaugingSheet[]> {
               const month = parseInt(dateStr.substring(0, 2)) - 1;
               const day = parseInt(dateStr.substring(2, 4));
               const year = 2000 + parseInt(dateStr.substring(4, 6));
-              sheetDate = new Date(year, month, day);
+              // Use Date.UTC to create date at midnight UTC to avoid timezone issues
+              sheetDate = new Date(Date.UTC(year, month, day));
               if (!isNaN(sheetDate.getTime())) {
                 console.log(`Parsed date from sheet name "${sheetName}": ${sheetDate.toLocaleDateString()}`);
               }
@@ -111,7 +112,8 @@ export function parseGaugingLog(file: File): Promise<ParsedGaugingSheet[]> {
               const month = parseInt(dateStr.substring(0, 2)) - 1;
               const day = parseInt(dateStr.substring(2, 3));
               const year = 2000 + parseInt(dateStr.substring(3, 5));
-              sheetDate = new Date(year, month, day);
+              // Use Date.UTC to create date at midnight UTC to avoid timezone issues
+              sheetDate = new Date(Date.UTC(year, month, day));
               if (!isNaN(sheetDate.getTime())) {
                 console.log(`Parsed date from sheet name "${sheetName}" (MMDYY format): ${sheetDate.toLocaleDateString()}`);
               }
@@ -126,7 +128,8 @@ export function parseGaugingLog(file: File): Promise<ParsedGaugingSheet[]> {
                   const month = parseInt(parts[0]) - 1;
                   const day = parseInt(parts[1]);
                   const year = parseInt(parts[2]);
-                  sheetDate = new Date(year, month, day);
+                  // Use Date.UTC to create date at midnight UTC to avoid timezone issues
+                  sheetDate = new Date(Date.UTC(year, month, day));
                 }
               }
             }
@@ -273,7 +276,7 @@ export function parseGaugingLog(file: File): Promise<ParsedGaugingSheet[]> {
             );
           });
           
-          console.log(`Sheet "${sheetName}": Column indices - Well: ${wellNumberIndex}, Tank: ${tankColumnIndex}, Oil (ft): ${oilFeetIndex}, Oil (in): ${oilInchesIndex}, Gas Rate: ${gasRateIndex}, Instant Gas Rate: ${instantGasRateIndex}, Tubing Pressure: ${tubingPressureIndex}, Casing Pressure: ${casingPressureIndex}, Line Pressure: ${linePressureIndex}, Comments: ${commentIndex}`);
+          console.log(`Sheet "${sheetName}": Column indices - Well: ${wellNumberIndex}, Date: ${dateIndex}, Tank: ${tankColumnIndex}, Oil (ft): ${oilFeetIndex}, Oil (in): ${oilInchesIndex}, Gas Rate: ${gasRateIndex}, Instant Gas Rate: ${instantGasRateIndex}, Tubing Pressure: ${tubingPressureIndex}, Casing Pressure: ${casingPressureIndex}, Line Pressure: ${linePressureIndex}, Comments: ${commentIndex}`);
 
           // Note: wellNumberIndex check is already done above with error thrown
 
@@ -288,17 +291,74 @@ export function parseGaugingLog(file: File): Promise<ParsedGaugingSheet[]> {
               continue; // Skip rows without well number
             }
 
-            // Try to get date from row if not in sheet name
-            let rowDate = sheetDate;
-            if (!rowDate && dateIndex !== -1 && row[dateIndex]) {
+            // PRIORITY 1: Try to get date from Date column (Column B or any column with "date" in header)
+            // PRIORITY 2: Fall back to sheet name date
+            let rowDate: Date | null = null;
+            
+            if (dateIndex !== -1 && row[dateIndex]) {
               try {
-                rowDate = new Date(String(row[dateIndex]));
-                if (isNaN(rowDate.getTime())) {
+                const dateValue = row[dateIndex];
+                
+                // Excel dates can be serial numbers or date strings
+                if (typeof dateValue === 'number') {
+                  // Excel serial date number (days since 1900-01-01)
+                  const excelEpoch = new Date(Date.UTC(1899, 11, 30)); // Excel epoch
+                  const msPerDay = 24 * 60 * 60 * 1000;
+                  rowDate = new Date(excelEpoch.getTime() + dateValue * msPerDay);
+                  
+                  if (i === 1) {
+                    console.log(`Sheet "${sheetName}": Reading Excel date from column ${dateIndex}, value: ${dateValue}, parsed as: ${rowDate.toISOString()}`);
+                  }
+                } else if (dateValue) {
+                  // Try parsing as string (format like "11/22/2025")
+                  const dateStr = String(dateValue).trim();
+                  
+                  // Try parsing with explicit format handling
+                  if (dateStr.includes('/') || dateStr.includes('-')) {
+                    const parts = dateStr.split(/[\/\-]/);
+                    if (parts.length === 3) {
+                      // Assume MM/DD/YYYY or M/D/YYYY format
+                      const month = parseInt(parts[0]) - 1; // Month is 0-indexed
+                      const day = parseInt(parts[1]);
+                      const year = parseInt(parts[2]);
+                      const fullYear = year < 100 ? 2000 + year : year; // Handle 2-digit years
+                      rowDate = new Date(Date.UTC(fullYear, month, day));
+                      
+                      if (i === 1) {
+                        console.log(`Sheet "${sheetName}": Reading date from column ${dateIndex}, value: "${dateStr}", parsed as: ${rowDate.toISOString()}`);
+                      }
+                    }
+                  } else {
+                    // Try standard date parsing as fallback
+                    const parsedDate = new Date(dateStr);
+                    if (!isNaN(parsedDate.getTime())) {
+                      const year = parsedDate.getFullYear();
+                      const month = parsedDate.getMonth();
+                      const day = parsedDate.getDate();
+                      rowDate = new Date(Date.UTC(year, month, day));
+                    }
+                  }
+                }
+                
+                // Validate the parsed date
+                if (!rowDate || isNaN(rowDate.getTime())) {
+                  if (i === 1) {
+                    console.log(`Sheet "${sheetName}": Failed to parse date from column ${dateIndex}, falling back to sheet date`);
+                  }
                   rowDate = sheetDate;
                 }
-              } catch {
+              } catch (error) {
+                if (i === 1) {
+                  console.log(`Sheet "${sheetName}": Error parsing date from column ${dateIndex}:`, error, "- falling back to sheet date");
+                }
                 rowDate = sheetDate;
               }
+            } else {
+              // No date column found, use sheet date
+              if (i === 1 && dateIndex === -1) {
+                console.log(`Sheet "${sheetName}": No Date column found, using sheet name date`);
+              }
+              rowDate = sheetDate;
             }
 
             // Get tank number from Tank column
@@ -377,10 +437,27 @@ export function parseGaugingLog(file: File): Promise<ParsedGaugingSheet[]> {
           }
 
             if (rows.length > 0) {
-              console.log(`Sheet "${sheetName}" parsed successfully with ${rows.length} rows`);
+              // Use date from first row if available (prioritize Column B dates over sheet name dates)
+              // Store as ISO string to avoid timezone conversion issues
+              let displayDateString: string | null = null;
+              
+              if (rows.length > 0 && rows[0].date) {
+                if (typeof rows[0].date === 'string' && rows[0].date.includes('T')) {
+                  // First row has a valid ISO date string from a Date column - use it directly
+                  displayDateString = rows[0].date;
+                  console.log(`Sheet "${sheetName}" parsed successfully with ${rows.length} rows - Using Column B date: ${displayDateString.split('T')[0]}`);
+                } else if (sheetDate) {
+                  displayDateString = sheetDate.toISOString();
+                  console.log(`Sheet "${sheetName}" parsed successfully with ${rows.length} rows - Using sheet name date: ${displayDateString.split('T')[0]}`);
+                }
+              } else if (sheetDate) {
+                displayDateString = sheetDate.toISOString();
+                console.log(`Sheet "${sheetName}" parsed successfully with ${rows.length} rows - Using sheet name date: ${displayDateString.split('T')[0]}`);
+              }
+              
               parsedSheets.push({
                 sheetName,
-                date: sheetDate,
+                date: displayDateString, // Store as ISO string, not Date object
                 rows,
               });
             } else {

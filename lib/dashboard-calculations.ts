@@ -82,46 +82,81 @@ function calculateWellOilRate(
 
   // Calculate rate for each tank and sum
   ["Tank 1", "Tank 2", "Tank 3"].forEach((tankNumber) => {
-    let latest: TankGauging | null = null;
-
     if (date) {
-      // Get gauging for specific date
-      const dateGaugings = gaugings.filter((g) => {
-        if (g.wellId !== well.id || g.tankNumber !== tankNumber) return false;
-        const gaugeDate = new Date(g.timestamp || g.createdAt);
-        const gaugeDateKey = format(gaugeDate, "yyyy-MM-dd");
-        return gaugeDateKey === date;
-      });
+      // For a specific date, find the gauging period it belongs to
+      // Get all gaugings for this well/tank, sorted by date
+      const wellTankGaugings = gaugings
+        .filter((g) => {
+          if (g.wellId !== well.id || g.tankNumber !== tankNumber) return false;
+          return true;
+        })
+        .map((g) => {
+          // Extract date key
+          const timestampStr = g.timestamp || g.createdAt || "";
+          let gaugeDateKey = "";
+          if (typeof timestampStr === "string" && timestampStr.includes("T")) {
+            gaugeDateKey = timestampStr.split("T")[0];
+          } else {
+            try {
+              gaugeDateKey = format(new Date(timestampStr), "yyyy-MM-dd");
+            } catch {
+              gaugeDateKey = "";
+            }
+          }
+          return { ...g, dateKey: gaugeDateKey };
+        })
+        .filter((g) => g.dateKey !== "")
+        .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+
+      // Find the next gauging on or after the requested date
+      const nextGauging = wellTankGaugings.find((g) => g.dateKey >= date);
       
-      if (dateGaugings.length > 0) {
-        latest = dateGaugings.sort(
-          (a, b) =>
-            new Date(b.timestamp || b.createdAt).getTime() -
-            new Date(a.timestamp || a.createdAt).getTime()
-        )[0];
+      if (nextGauging) {
+        // Find the previous gauging (the one right before nextGauging)
+        const nextIndex = wellTankGaugings.indexOf(nextGauging);
+        const previousGauging = nextIndex > 0 ? wellTankGaugings[nextIndex - 1] : null;
+
+        if (previousGauging) {
+          // Calculate rate for the period from previous to next
+          const currentBarrels = calculateBarrels(nextGauging.level, tankFactor);
+          const previousBarrels = calculateBarrels(previousGauging.level, tankFactor);
+          const daysDiff = calculateDaysDifference(
+            nextGauging.timestamp || nextGauging.createdAt,
+            previousGauging.timestamp || previousGauging.createdAt
+          );
+          
+          const rate = calculateRate(currentBarrels, previousBarrels, daysDiff);
+          
+          // Apply this rate to the requested date if it's within the period
+          // Period is (previous, next] - after previous, up to and including next
+          if (rate !== null && rate > 0 && date > previousGauging.dateKey && date <= nextGauging.dateKey) {
+            totalRate += rate;
+          }
+        }
       }
     } else {
-      latest = getLatestGauging(gaugings, well.id, tankNumber);
-    }
-
-    if (latest) {
-      const barrels = calculateBarrels(latest.level, tankFactor);
-      const previous = getPreviousGauging(
-        gaugings,
-        well.id,
-        tankNumber,
-        latest.timestamp || latest.createdAt
-      );
-
-      if (previous) {
-        const daysDiff = calculateDaysDifference(
-          latest.timestamp || latest.createdAt,
-          previous.timestamp || previous.createdAt
+      // For latest rate (no specific date), use the original logic
+      const latest = getLatestGauging(gaugings, well.id, tankNumber);
+      
+      if (latest) {
+        const barrels = calculateBarrels(latest.level, tankFactor);
+        const previous = getPreviousGauging(
+          gaugings,
+          well.id,
+          tankNumber,
+          latest.timestamp || latest.createdAt
         );
-        const previousBarrels = calculateBarrels(previous.level, tankFactor);
-        const rate = calculateRate(barrels, previousBarrels, daysDiff);
-        if (rate !== null && rate > 0) {
-          totalRate += rate;
+
+        if (previous) {
+          const daysDiff = calculateDaysDifference(
+            latest.timestamp || latest.createdAt,
+            previous.timestamp || previous.createdAt
+          );
+          const previousBarrels = calculateBarrels(previous.level, tankFactor);
+          const rate = calculateRate(barrels, previousBarrels, daysDiff);
+          if (rate !== null && rate > 0) {
+            totalRate += rate;
+          }
         }
       }
     }
@@ -152,8 +187,18 @@ export function calculateTotalOilInventory(
         // Get gauging for specific date (use nearest on or before that date)
         const dateGaugings = gaugings.filter((g) => {
           if (g.wellId !== well.id || g.tankNumber !== tankNumber) return false;
-          const gaugeDate = new Date(g.timestamp || g.createdAt);
-          const gaugeDateKey = format(gaugeDate, "yyyy-MM-dd");
+          // Extract date key directly from ISO string to avoid timezone issues
+          const timestampStr = g.timestamp || g.createdAt || "";
+          let gaugeDateKey = "";
+          if (typeof timestampStr === "string" && timestampStr.includes("T")) {
+            gaugeDateKey = timestampStr.split("T")[0];
+          } else {
+            try {
+              gaugeDateKey = format(new Date(timestampStr), "yyyy-MM-dd");
+            } catch {
+              return false;
+            }
+          }
           return gaugeDateKey <= date;
         });
 
@@ -175,7 +220,8 @@ export function calculateTotalOilInventory(
     });
   });
 
-  return totalBarrels;
+  // Round to 1 decimal place to avoid floating point precision issues
+  return Math.round(totalBarrels * 10) / 10;
 }
 
 /**
@@ -190,7 +236,8 @@ export function calculateOilRateTotal(
   wells.forEach((well) => {
     total += calculateWellOilRate(well, gaugings, date);
   });
-  return total;
+  // Round to 1 decimal place to avoid floating point precision issues
+  return Math.round(total * 10) / 10;
 }
 
 /**
@@ -220,7 +267,9 @@ export function calculateOilRateFromInventoryChange(
   // Return the average rate
   // Note: This assumes inventory increases. If oil is picked up, inventory decreases
   // and we'd need to account for that separately
-  return inventoryChange / daysDiff;
+  const rate = inventoryChange / daysDiff;
+  // Round to 1 decimal place to avoid floating point precision issues
+  return Math.round(rate * 10) / 10;
 }
 
 /**
@@ -232,6 +281,8 @@ export function calculateGasRateTotal(
   date: string | null
 ): number {
   let total = 0;
+  const debugDate = "2025-12-08";
+  const wellContributions: any[] = [];
 
   wells.forEach((well) => {
     let gasRateReadings = readings.filter((r) => {
@@ -247,38 +298,19 @@ export function calculateGasRateTotal(
 
     if (date) {
       gasRateReadings = gasRateReadings.filter((r) => {
-        // Try multiple ways to extract the date
+        // Extract date directly from ISO string to avoid timezone issues
         const timestampStr = r.timestamp || r.createdAt || "";
         
-        // Method 1: If timestamp is a string with T, extract date part directly
+        // Only use Method 1: Extract date part directly from ISO string
         if (typeof timestampStr === "string" && timestampStr.includes("T")) {
           const datePart = timestampStr.split("T")[0];
-          if (datePart === date) return true;
+          return datePart === date;
         }
         
-        // Method 2: Parse as Date and format
-        try {
-          const readingDate = new Date(timestampStr);
-          // Check if date is valid
-          if (!isNaN(readingDate.getTime())) {
-            const readingDateKey = format(readingDate, "yyyy-MM-dd");
-            if (readingDateKey === date) return true;
-            
-            // Also try with UTC to avoid timezone issues
-            const utcYear = readingDate.getUTCFullYear();
-            const utcMonth = String(readingDate.getUTCMonth() + 1).padStart(2, "0");
-            const utcDay = String(readingDate.getUTCDate()).padStart(2, "0");
-            const utcDateKey = `${utcYear}-${utcMonth}-${utcDay}`;
-            if (utcDateKey === date) return true;
-          }
-        } catch (e) {
-          // Date parsing failed, continue to next method
-        }
-        
-        // Method 3: If timestamp is just a date string (YYYY-MM-DD)
+        // Fallback for non-ISO strings
         if (typeof timestampStr === "string" && timestampStr.match(/^\d{4}-\d{2}-\d{2}/)) {
           const datePart = timestampStr.substring(0, 10);
-          if (datePart === date) return true;
+          return datePart === date;
         }
         
         return false;
@@ -292,11 +324,33 @@ export function calculateGasRateTotal(
           new Date(b.timestamp || b.createdAt).getTime() -
           new Date(a.timestamp || a.createdAt).getTime()
       );
-      total += gasRateReadings[0].value || 0;
+      const value = gasRateReadings[0].value || 0;
+      total += value;
+      
+      // Debug for Dec 8th
+      if (date === debugDate && value > 0) {
+        wellContributions.push({
+          wellId: well.id,
+          wellName: well.name || well.wellNumber,
+          value: value,
+          timestamp: gasRateReadings[0].timestamp,
+          readingsCount: gasRateReadings.length
+        });
+      }
     }
   });
 
-  return total;
+  // Debug log for Dec 8th
+  if (date === debugDate && wellContributions.length > 0) {
+    console.log(`🔍 Dashboard calculateGasRateTotal for ${date}:`, {
+      wellCount: wellContributions.length,
+      total: total,
+      wells: wellContributions
+    });
+  }
+
+  // Round to 1 decimal place to avoid floating point precision issues
+  return Math.round(total * 10) / 10;
 }
 
 /**
@@ -304,7 +358,9 @@ export function calculateGasRateTotal(
  * BOE = Oil Rate + (Gas Rate / 6)
  */
 export function calculateBOE(oilRate: number, gasRate: number): number {
-  return oilRate + gasRate / 6;
+  const boe = oilRate + gasRate / 6;
+  // Round to 1 decimal place to avoid floating point precision issues
+  return Math.round(boe * 10) / 10;
 }
 
 /**
@@ -352,7 +408,9 @@ export function calculateMonthlyAverage(
 ): number {
   if (values.length === 0) return 0;
   const sum = values.reduce((a, b) => a + b, 0);
-  return sum / values.length;
+  const average = sum / values.length;
+  // Round to 1 decimal place to avoid floating point precision issues
+  return Math.round(average * 10) / 10;
 }
 
 /**
@@ -414,21 +472,48 @@ export function getDailyProductionData(
     }
   });
   
-  // Get all unique dates from start of month to today
-  const currentDate = new Date(startDate);
+  // Get all unique dates from start of month to today (inclusive)
+  // Use date strings for comparison to avoid timezone issues
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayKey = format(today, "yyyy-MM-dd");
+  const startDateKey = format(startDate, "yyyy-MM-dd");
+  const endDateKey = format(endDate, "yyyy-MM-dd");
   
-  // Create entries for all dates in current month range
-  while (currentDate <= today && currentDate <= endDate) {
+  // Determine the maximum date to include (should be today)
+  const maxDateKey = todayKey <= endDateKey ? todayKey : endDateKey;
+  
+  // Create entries for all dates in current month range, including today
+  const currentDate = new Date(startDate);
+  currentDate.setHours(0, 0, 0, 0);
+  
+  // Loop through all dates from start to today (inclusive)
+  while (true) {
     const dateKey = format(currentDate, "yyyy-MM-dd");
+    
+    // Add this date to the data
     dailyData[dateKey] = {
       oilRate: 0,
       gasRate: 0,
       wellIds: new Set<string>(),
     };
+    
+    // If we've reached or passed today (or maxDateKey), stop after adding it
+    if (dateKey >= maxDateKey) {
+      break;
+    }
+    
+    // Move to next day
     currentDate.setDate(currentDate.getDate() + 1);
   }
+  
+  // Explicitly ensure today is included (double-check with explicit date key)
+  // This handles edge cases where the loop might have missed it
+  dailyData[todayKey] = dailyData[todayKey] || {
+    oilRate: 0,
+    gasRate: 0,
+    wellIds: new Set<string>(),
+  };
   
   // Also add any dates with data, regardless of whether they're in the current month
   // This ensures we include all dates that have actual data
@@ -502,36 +587,35 @@ export function getDailyProductionData(
     const gasRate = calculateGasRateTotal(wells, readings, dateKey);
     dailyData[dateKey].gasRate = gasRate;
     
-    // Debug for December 9th specifically (disabled to reduce console noise)
-    // Uncomment if needed for debugging
-    // if (process.env.NODE_ENV === "development" && dateKey === "2025-12-09") {
-    //   const gasReadingsForDate = readings.filter((r) => {
-    //     if (r.wellId && !wells.find((w: any) => w.id === r.wellId)) return false;
-    //     const meterType = r.meterType || "";
-    //     const meterTypeLower = meterType.toLowerCase();
-    //     const isGasRate = meterTypeLower === "gas rate" && !meterTypeLower.includes("instant");
-    //     
-    //     if (!isGasRate) return false;
-    //     
-    //     const timestampStr = r.timestamp || r.createdAt || "";
-    //     if (typeof timestampStr === "string" && timestampStr.includes("T")) {
-    //       return timestampStr.split("T")[0] === dateKey;
-    //     }
-    //     try {
-    //       return format(new Date(timestampStr), "yyyy-MM-dd") === dateKey;
-    //     } catch {
-    //       return false;
-    //     }
-    //   });
-    //   console.log(`Dec 9th debug - Found ${gasReadingsForDate.length} gas rate readings:`, gasReadingsForDate.map(r => ({
-    //     wellId: r.wellId,
-    //     meterType: r.meterType,
-    //     value: r.value,
-    //     timestamp: r.timestamp,
-    //     createdAt: r.createdAt
-    //   })));
-    //   console.log(`Dec 9th debug - Calculated gas rate: ${gasRate}`);
-    // }
+    // Debug for December 8th specifically
+    if (process.env.NODE_ENV === "development" && dateKey === "2025-12-08") {
+      const gasReadingsForDate = readings.filter((r) => {
+        if (r.wellId && !wells.find((w: any) => w.id === r.wellId)) return false;
+        const meterType = r.meterType || "";
+        const meterTypeLower = meterType.toLowerCase();
+        const isGasRate = meterTypeLower === "gas rate" && !meterTypeLower.includes("instant");
+        
+        if (!isGasRate) return false;
+        
+        const timestampStr = r.timestamp || r.createdAt || "";
+        if (typeof timestampStr === "string" && timestampStr.includes("T")) {
+          return timestampStr.split("T")[0] === dateKey;
+        }
+        try {
+          return format(new Date(timestampStr), "yyyy-MM-dd") === dateKey;
+        } catch {
+          return false;
+        }
+      });
+      console.log(`Dec 8th debug - Found ${gasReadingsForDate.length} gas rate readings:`, gasReadingsForDate.map(r => ({
+        wellId: r.wellId,
+        meterType: r.meterType,
+        value: r.value,
+        timestamp: r.timestamp,
+        createdAt: r.createdAt
+      })));
+      console.log(`Dec 8th debug - Calculated gas rate total: ${gasRate}`);
+    }
   });
   
   // Debug: Log if we have readings for dates not in dailyData (disabled to reduce console noise)
@@ -574,7 +658,7 @@ export function getDailyProductionData(
         gasRate: data.gasRate,
         boe: calculateBOE(data.oilRate, data.gasRate),
         wellCount: wellCount,
-        wellPercentage: wellPercentage,
+        wellPercentage: Math.round(wellPercentage * 10) / 10, // Round to 1 decimal
       };
     });
 }

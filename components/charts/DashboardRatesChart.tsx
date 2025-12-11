@@ -117,7 +117,13 @@ export function DashboardRatesChart({ data, baselineData = [] }: DashboardRatesC
             type="category"
             tickFormatter={(value) => {
               try {
-                return format(new Date(value), "MMM d");
+                // value is "2025-12-08" - format directly without Date objects
+                if (typeof value === 'string' && value.includes('-')) {
+                  const [year, month, day] = value.split('-');
+                  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                  return `${monthNames[parseInt(month) - 1]} ${parseInt(day)}`;
+                }
+                return String(value);
               } catch {
                 return String(value);
               }
@@ -143,31 +149,35 @@ export function DashboardRatesChart({ data, baselineData = [] }: DashboardRatesC
             }}
             labelFormatter={(value) => {
               try {
-                // Value might be a timestamp or date string
-                const date = typeof value === 'number' ? new Date(value) : new Date(value);
-                return format(date, "MMM d, yyyy");
+                // value is "2025-12-08" - format directly without Date objects
+                if (typeof value === 'string' && value.includes('-')) {
+                  const [year, month, day] = value.split('-');
+                  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                  return `${monthNames[parseInt(month) - 1]} ${parseInt(day)}, ${year}`;
+                }
+                return String(value);
               } catch {
                 return String(value);
               }
             }}
             formatter={(value: any, name: string) => {
               if (name === "oilRate") {
-                return [`${Number(value).toFixed(2)} bbls/day`, "Oil Rate"];
+                return [`${Number(value).toFixed(1)} bbls/day`, "Oil Rate"];
               }
               if (name === "gasRate") {
                 return [`${Number(value).toFixed(1)} MCF/day`, "Gas Rate"];
               }
               if (name === "boe") {
-                return [`${Number(value).toFixed(2)} BOE/day`, "BOE"];
+                return [`${Number(value).toFixed(1)} BOE/day`, "BOE"];
               }
               if (name === "baselineOilRate") {
-                return [`${Number(value).toFixed(2)} bbls/day`, "Baseline Oil Rate"];
+                return [`${Number(value).toFixed(1)} bbls/day`, "Baseline Oil Rate"];
               }
               if (name === "baselineGasRate") {
                 return [`${Number(value).toFixed(1)} MCF/day`, "Baseline Gas Rate"];
               }
               if (name === "baselineBOE") {
-                return [`${Number(value).toFixed(2)} BOE/day`, "Baseline BOE"];
+                return [`${Number(value).toFixed(1)} BOE/day`, "Baseline BOE"];
               }
               return [value, name];
             }}

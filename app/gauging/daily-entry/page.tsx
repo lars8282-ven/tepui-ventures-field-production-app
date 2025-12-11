@@ -67,7 +67,8 @@ export default function DailyEntryPage() {
 
     setSubmitting(true);
     const transactions: any[] = [];
-    const timestamp = new Date(`${date}T12:00:00`).toISOString();
+    // Use 12:00:00 UTC to ensure the date doesn't shift due to timezone
+    const timestamp = new Date(`${date}T12:00:00Z`).toISOString();
     const now = new Date().toISOString();
 
     try {

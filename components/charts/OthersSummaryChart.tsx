@@ -74,10 +74,23 @@ export function OthersSummaryChart({
     > = {};
 
     pressureReadings.forEach((reading) => {
-      const date = new Date(reading.timestamp || reading.createdAt);
-      const dateKey = format(date, "yyyy-MM-dd");
+      // Extract date key directly from ISO string to avoid timezone issues
+      const timestampStr = reading.timestamp || reading.createdAt || "";
+      let dateKey = "";
+      if (typeof timestampStr === "string" && timestampStr.includes("T")) {
+        // Extract date part directly from ISO string (YYYY-MM-DD)
+        dateKey = timestampStr.split("T")[0];
+      } else {
+        // Fallback to date formatting if not ISO format
+        try {
+          dateKey = format(new Date(timestampStr), "yyyy-MM-dd");
+        } catch {
+          // Skip invalid dates
+          return;
+        }
+      }
       const wellId = reading.wellId;
-      const timestamp = new Date(reading.timestamp || reading.createdAt).getTime();
+      const timestamp = new Date(timestampStr).getTime();
       const meterType = reading.meterType || "";
 
       if (!dataByDate[dateKey]) {
@@ -193,7 +206,15 @@ export function OthersSummaryChart({
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis
             dataKey="date"
-            tickFormatter={(value) => format(new Date(value), "MMM d")}
+            tickFormatter={(value) => {
+              // value is "2025-12-08" - format directly without Date objects
+              if (typeof value === 'string' && value.includes('-')) {
+                const [year, month, day] = value.split('-');
+                const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                return `${monthNames[parseInt(month) - 1]} ${parseInt(day)}`;
+              }
+              return value;
+            }}
           />
           <YAxis
             yAxisId="left"
@@ -210,7 +231,15 @@ export function OthersSummaryChart({
               border: "1px solid #ccc",
               borderRadius: "4px",
             }}
-            labelFormatter={(value) => format(new Date(value), "MMM d, yyyy")}
+            labelFormatter={(value) => {
+              // value is "2025-12-08" - format directly without Date objects
+              if (typeof value === 'string' && value.includes('-')) {
+                const [year, month, day] = value.split('-');
+                const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                return `${monthNames[parseInt(month) - 1]} ${parseInt(day)}, ${year}`;
+              }
+              return value;
+            }}
             formatter={(value: any, name: string) => {
               if (name === "wellCount") {
                 return [`${Number(value).toFixed(0)} wells`, "Wells Running"];

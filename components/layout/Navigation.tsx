@@ -9,12 +9,10 @@ import { Logo } from "@/components/Logo";
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard" },
+  { name: "Field Entry", href: "/field-entry" },
   { name: "Summary", href: "/summary" },
-  { name: "Wells", href: "/wells" },
-  { name: "Readings", href: "/readings" },
-  { name: "Gauging", href: "/gauging" },
   { name: "Baseline", href: "/baseline" },
-  { name: "Analytics", href: "/analytics" },
+  { name: "Wells", href: "/wells" },
   { name: "Import", href: "/import" },
 ];
 

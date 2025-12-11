@@ -22,7 +22,8 @@ function convertToDailyRate(monthlyValue: number, dateStr: string): number {
   const daysInMonth = getDaysInMonthForDate(dateStr);
   // Monthly values are in MBbl or MMcf, convert to Bbl or Mcf, then divide by days
   const dailyRate = (monthlyValue * 1000) / daysInMonth;
-  return dailyRate;
+  // Round to 1 decimal place to avoid floating point precision issues
+  return Math.round(dailyRate * 10) / 10;
 }
 
 /**
@@ -127,7 +128,9 @@ export function getBaselineDailyRate(
 
     // BOE = Oil (Bbl) + Gas (Mcf) / 6
     // Note: gasRate is in Mcf/day, need to convert to Bbl equivalent
-    return oilRate + gasRate / 6;
+    const boe = oilRate + gasRate / 6;
+    // Round to 1 decimal place to avoid floating point precision issues
+    return Math.round(boe * 10) / 10;
   }
 
   return null;

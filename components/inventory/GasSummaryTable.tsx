@@ -65,8 +65,18 @@ export function GasSummaryTable({
         
         // Find reading from the previous day
         return readingsList.find((r) => {
-          const readingDate = new Date(r.timestamp || r.createdAt);
-          const readingDateKey = format(readingDate, "yyyy-MM-dd");
+          // Extract date key directly from ISO string to avoid timezone issues
+          const timestampStr = r.timestamp || r.createdAt || "";
+          let readingDateKey = "";
+          if (typeof timestampStr === "string" && timestampStr.includes("T")) {
+            readingDateKey = timestampStr.split("T")[0];
+          } else {
+            try {
+              readingDateKey = format(new Date(timestampStr), "yyyy-MM-dd");
+            } catch {
+              return false;
+            }
+          }
           return readingDateKey === previousDayKey;
         }) || null;
       };
@@ -77,8 +87,18 @@ export function GasSummaryTable({
         // If date is selected, get the reading from that specific date
         latestGasRate = allGasRateReadings
           .filter((r) => {
-            const readingDate = new Date(r.timestamp || r.createdAt);
-            const readingDateKey = format(readingDate, "yyyy-MM-dd");
+            // Extract date key directly from ISO string to avoid timezone issues
+            const timestampStr = r.timestamp || r.createdAt || "";
+            let readingDateKey = "";
+            if (typeof timestampStr === "string" && timestampStr.includes("T")) {
+              readingDateKey = timestampStr.split("T")[0];
+            } else {
+              try {
+                readingDateKey = format(new Date(timestampStr), "yyyy-MM-dd");
+              } catch {
+                return false;
+              }
+            }
             return readingDateKey === selectedDate;
           })
           .sort((a, b) =>
@@ -111,8 +131,18 @@ export function GasSummaryTable({
         // If date is selected, get the reading from that specific date
         latestInstantGasRate = allInstantGasRateReadings
           .filter((r) => {
-            const readingDate = new Date(r.timestamp || r.createdAt);
-            const readingDateKey = format(readingDate, "yyyy-MM-dd");
+            // Extract date key directly from ISO string to avoid timezone issues
+            const timestampStr = r.timestamp || r.createdAt || "";
+            let readingDateKey = "";
+            if (typeof timestampStr === "string" && timestampStr.includes("T")) {
+              readingDateKey = timestampStr.split("T")[0];
+            } else {
+              try {
+                readingDateKey = format(new Date(timestampStr), "yyyy-MM-dd");
+              } catch {
+                return false;
+              }
+            }
             return readingDateKey === selectedDate;
           })
           .sort((a, b) =>

@@ -61,7 +61,6 @@ export default function ImportGaugingPage() {
       }
       
       setPreview(parsedSheets); // Show all sheets, not just first 5
-      console.log("Preview set - first sheet date:", parsedSheets[0]?.date, "type:", typeof parsedSheets[0]?.date);
       setStep("preview");
     } catch (error: any) {
       console.error("Error parsing file:", error);
@@ -226,10 +225,7 @@ export default function ImportGaugingPage() {
             </div>
           ) : (
             <div className="space-y-4">
-            {preview.map((sheet, idx) => {
-              // Debug: log first sheet data
-              if (idx === 0) console.log(`🔍 Rendering sheet ${sheet.sheetName}: date=${sheet.date}, type=${typeof sheet.date}`);
-              return (
+            {preview.map((sheet, idx) => (
               <div key={idx} className="border border-gray-200 rounded-lg p-4">
                 <div className="flex justify-between items-center mb-2">
                   <h3 className="text-sm font-semibold text-gray-900">
@@ -332,8 +328,7 @@ export default function ImportGaugingPage() {
                   </div>
                 )}
               </div>
-            );
-            })}
+            ))}
             </div>
           )}
           <div className="mt-6 flex space-x-3">

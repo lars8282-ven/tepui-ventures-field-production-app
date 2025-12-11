@@ -47,7 +47,15 @@ export function DashboardWellsChart({ data }: DashboardWellsChartProps) {
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis
             dataKey="date"
-            tickFormatter={(value) => format(new Date(value), "MMM d")}
+            tickFormatter={(value) => {
+              // value is "2025-12-08" - format directly without Date objects
+              if (typeof value === 'string' && value.includes('-')) {
+                const [year, month, day] = value.split('-');
+                const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                return `${monthNames[parseInt(month) - 1]} ${parseInt(day)}`;
+              }
+              return value;
+            }}
           />
           <YAxis
             yAxisId="left"
@@ -66,7 +74,15 @@ export function DashboardWellsChart({ data }: DashboardWellsChartProps) {
               border: "1px solid #ccc",
               borderRadius: "4px",
             }}
-            labelFormatter={(value) => format(new Date(value), "MMM d, yyyy")}
+            labelFormatter={(value) => {
+              // value is "2025-12-08" - format directly without Date objects
+              if (typeof value === 'string' && value.includes('-')) {
+                const [year, month, day] = value.split('-');
+                const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                return `${monthNames[parseInt(month) - 1]} ${parseInt(day)}, ${year}`;
+              }
+              return value;
+            }}
             formatter={(value: any, name: string) => {
               if (name === "wellCount") {
                 return [`${Number(value).toFixed(0)} wells`, "Wells Running"];

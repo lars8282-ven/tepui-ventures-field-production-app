@@ -48,8 +48,21 @@ export function OilInventoryChart({
     gaugings.forEach((gauging) => {
       const wellId = gauging.wellId;
       const tankNumber = gauging.tankNumber || "Unknown";
-      const date = new Date(gauging.timestamp || gauging.createdAt);
-      const dateKey = format(date, "yyyy-MM-dd");
+      // Extract date key directly from ISO string to avoid timezone issues
+      const timestampStr = gauging.timestamp || gauging.createdAt || "";
+      let dateKey = "";
+      if (typeof timestampStr === "string" && timestampStr.includes("T")) {
+        // Extract date part directly from ISO string (YYYY-MM-DD)
+        dateKey = timestampStr.split("T")[0];
+      } else {
+        // Fallback to date formatting if not ISO format
+        try {
+          dateKey = format(new Date(timestampStr), "yyyy-MM-dd");
+        } catch {
+          // Skip invalid dates
+          return;
+        }
+      }
 
       if (!dataByDate[dateKey]) {
         dataByDate[dateKey] = {};
@@ -135,7 +148,15 @@ export function OilInventoryChart({
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis
             dataKey="date"
-            tickFormatter={(value) => format(new Date(value), "MMM d")}
+            tickFormatter={(value) => {
+              // value is "2025-12-08" - format directly without Date objects
+              if (typeof value === 'string' && value.includes('-')) {
+                const [year, month, day] = value.split('-');
+                const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                return `${monthNames[parseInt(month) - 1]} ${parseInt(day)}`;
+              }
+              return value;
+            }}
           />
           <YAxis label={{ value: "Barrels", angle: -90, position: "insideLeft" }} />
           <Tooltip
@@ -144,7 +165,15 @@ export function OilInventoryChart({
               border: "1px solid #ccc",
               borderRadius: "4px",
             }}
-            labelFormatter={(value) => format(new Date(value), "MMM d, yyyy")}
+            labelFormatter={(value) => {
+              // value is "2025-12-08" - format directly without Date objects
+              if (typeof value === 'string' && value.includes('-')) {
+                const [year, month, day] = value.split('-');
+                const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                return `${monthNames[parseInt(month) - 1]} ${parseInt(day)}, ${year}`;
+              }
+              return value;
+            }}
             formatter={(value: any) => [`${Number(value).toFixed(1)} bbls`, "Total"]}
           />
           <Line
