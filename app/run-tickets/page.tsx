@@ -108,7 +108,7 @@ export default function RunTicketsPage() {
   // Filter wells based on search query
   const filteredWells = wells.filter((well: any) => {
     const searchLower = wellSearchQuery.toLowerCase();
-    const wellName = well.name.toLowerCase();
+    const wellName = (well as any)?.name?.toLowerCase() || "";
     return wellName.includes(searchLower);
   });
 
@@ -116,7 +116,7 @@ export default function RunTicketsPage() {
   const selectedWellName = formData.wellId
     ? (() => {
         const well = wells.find((w: any) => w.id === formData.wellId);
-        return well ? well.name : "";
+        return well ? (well as any).name : "";
       })()
     : "";
 
@@ -251,7 +251,7 @@ export default function RunTicketsPage() {
 
   const getWellName = (wellId: string) => {
     const well = wells.find((w: any) => w.id === wellId);
-    return well ? well.name : "Unknown";
+    return well ? (well as any).name : "Unknown";
   };
 
   const formatDate = (dateString: string) => {
