@@ -1,31 +1,57 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { id } from "@instantdb/react";
 import { db } from "@/lib/instant";
 import { useRouter } from "next/navigation";
+import { getTodayCST, dateToCSTTimestamp, timestampToDateString } from "@/lib/utils";
+import { format } from "date-fns";
 
-type WellEntry = {
+interface FieldEntryFormData {
   wellId: string;
-  tank1Feet?: string;
-  tank1Inches?: string;
-  tank2Feet?: string;
-  tank2Inches?: string;
-  tank3Feet?: string;
-  tank3Inches?: string;
-  gasRate?: string;
-  instantGasRate?: string;
-  tubingPressure?: string;
-  casingPressure?: string;
-  linePressure?: string;
+  date: string;
+  tank1Inches: string;
+  tank2Inches: string;
+  tank3Inches: string;
+  gasRate: string;
+  instantGasRate: string;
+  tubingPressure: string;
+  casingPressure: string;
+  linePressure: string;
+  comment: string;
+}
+
+interface GroupedEntry {
+  wellId: string;
+  wellName: string;
+  date: string;
+  dateKey: string;
+  tank1?: number; // Total inches
+  tank2?: number; // Total inches
+  tank3?: number; // Total inches
+  gasRate?: number;
+  instantGasRate?: number;
+  tubingPressure?: number;
+  casingPressure?: number;
+  linePressure?: number;
   comment?: string;
-};
+  recordIds: {
+    tankGauging: string[];
+    meterReadings: string[];
+  };
+}
+
+interface EditingCell {
+  entryKey: string;
+  field: string;
+  value: string;
+}
 
 export default function FieldEntryPage() {
   const router = useRouter();
   const { user: authUser } = db.useAuth();
   const userId = authUser?.id;
-  
+
   const { data: wellsData } = db.useQuery({
     wells: {
       $: {
@@ -40,11 +66,6 @@ export default function FieldEntryPage() {
 
   const { data: readingsData } = db.useQuery({
     meterReadings: {},
-  });
-
-  // Query for shared field entry settings
-  const { data: settingsData } = db.useQuery({
-    fieldEntrySettings: {},
   });
 
   const wellsRaw = wellsData?.wells;
@@ -68,312 +89,530 @@ export default function FieldEntryPage() {
       : Object.values(readingsRaw)
     : [];
 
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [entries, setEntries] = useState<WellEntry[]>(
-    wells.length > 0 ? wells.map((w: any) => ({ wellId: w.id })) : []
-  );
+  const [showForm, setShowForm] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<GroupedEntry | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [expandedWells, setExpandedWells] = useState<Set<string>>(new Set());
-  const [selectedWellIds, setSelectedWellIds] = useState<Set<string>>(new Set());
-  const [showWellSelector, setShowWellSelector] = useState(false);
-  const [savingWellId, setSavingWellId] = useState<string | null>(null);
-  const [savingSettings, setSavingSettings] = useState(false);
-  const [hasLoadedSettings, setHasLoadedSettings] = useState(false);
-  const [isUserChangingSelection, setIsUserChangingSelection] = useState(false);
+  const [wellSearchQuery, setWellSearchQuery] = useState("");
+  const [showWellDropdown, setShowWellDropdown] = useState(false);
+  const [selectedDateFilter, setSelectedDateFilter] = useState<string>("");
+  const wellDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Extract settings from InstantDB - always use the first one if multiple exist
-  const settingsRaw = settingsData?.fieldEntrySettings;
-  const settings = settingsRaw
-    ? Array.isArray(settingsRaw)
-      ? (settingsRaw[0] as any) // Get first (should only be one, but use first if multiple)
-      : (Object.values(settingsRaw)[0] as any) // Get first value if object
-    : null;
-
-  // Load selected wells from InstantDB (shared across all users) - only once on initial load
-  useEffect(() => {
-    if (wells.length > 0 && !hasLoadedSettings) {
-      if (settings?.selectedWellIds !== undefined) {
-        try {
-          const parsed = Array.isArray(settings.selectedWellIds) 
-            ? settings.selectedWellIds 
-            : JSON.parse(settings.selectedWellIds as any);
-          // Allow empty array - respect user's deselection
-          setSelectedWellIds(new Set(parsed));
-          setHasLoadedSettings(true);
-        } catch {
-          // If parsing fails, default to all wells
-          setSelectedWellIds(new Set(wells.map((w: any) => w.id)));
-          setHasLoadedSettings(true);
-        }
-      } else {
-        // Default to all wells if no settings exist
-        setSelectedWellIds(new Set(wells.map((w: any) => w.id)));
-        setHasLoadedSettings(true);
+  const [formData, setFormData] = useState<FieldEntryFormData>(() => {
+    // Use a safe default that works in both SSR and client
+    let defaultDate = "";
+    if (typeof window !== "undefined") {
+      try {
+        defaultDate = getTodayCST();
+      } catch (error) {
+        defaultDate = new Date().toISOString().slice(0, 10);
       }
+    } else {
+      defaultDate = new Date().toISOString().slice(0, 10);
+    }
+    return {
+      wellId: "",
+      date: defaultDate,
+      tank1Inches: "",
+      tank2Inches: "",
+      tank3Inches: "",
+      gasRate: "",
+      instantGasRate: "",
+      tubingPressure: "",
+      casingPressure: "",
+      linePressure: "",
+      comment: "",
+    };
+  });
+
+  const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        wellDropdownRef.current &&
+        !wellDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowWellDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // Ensure we have arrays even if data is undefined
+  const safeWells = Array.isArray(wells) ? wells : [];
+  const safeGaugings = Array.isArray(gaugings) ? gaugings : [];
+  const safeReadings = Array.isArray(readings) ? readings : [];
+
+  // Group entries by well and date
+  const groupedEntries = useMemo(() => {
+    const entriesMap = new Map<string, GroupedEntry>();
+
+    // Process tank gaugings
+    safeGaugings.forEach((gauging: any) => {
+      if (!gauging || !gauging.wellId || !gauging.timestamp) return;
       
-      // Initialize entries
-      if (entries.length === 0) {
-        setEntries(wells.map((w: any) => ({ wellId: w.id })));
+      let dateKey = "";
+      try {
+        dateKey = timestampToDateString(gauging.timestamp);
+      } catch (error) {
+        console.error("Error parsing gauging timestamp:", error, gauging);
+        return;
       }
-    }
-  }, [wells.length, settings, hasLoadedSettings, entries.length]);
-
-  // Update selection when settings change (for real-time sync from other users)
-  // Only sync if the user is NOT actively changing the selection and it's from another user
-  useEffect(() => {
-    if (hasLoadedSettings && settings?.selectedWellIds !== undefined && !isUserChangingSelection && !savingSettings) {
-      // Only sync if the update was from a different user
-      if (settings.updatedBy && settings.updatedBy !== userId) {
-        try {
-          const parsed = Array.isArray(settings.selectedWellIds) 
-            ? settings.selectedWellIds 
-            : JSON.parse(settings.selectedWellIds as any);
-          // Only update if it's different (to avoid unnecessary re-renders)
-          const newSet = new Set(parsed as string[]);
-          const currentArray = Array.from(selectedWellIds).sort();
-          const newArray = Array.from(newSet).sort();
-          const isDifferent = currentArray.length !== newArray.length || 
-              currentArray.some((id, idx) => id !== newArray[idx]);
-          
-          if (isDifferent) {
-            console.log("Syncing selection from another user:", newArray.length, "wells");
-            setSelectedWellIds(newSet);
-          }
-        } catch (error) {
-          console.error("Error parsing settings:", error);
-        }
-      }
-    }
-  }, [settings?.selectedWellIds, settings?.updatedBy, hasLoadedSettings, isUserChangingSelection, savingSettings, userId]);
-
-  // Create initial settings if they don't exist (only once on first load)
-  useEffect(() => {
-    if (wells.length > 0 && !settings && userId && !savingSettings && hasLoadedSettings && selectedWellIds.size > 0) {
-      // Only create initial settings after we've loaded and have a selection
-      // This prevents creating settings with empty array on first load
-      const wellIdsArray = Array.from(selectedWellIds);
-      const now = new Date().toISOString();
-      const newSettingsId = id();
+      const key = `${gauging.wellId}_${dateKey}`;
       
-      setSavingSettings(true);
-      db.transact(
-        db.tx.fieldEntrySettings[newSettingsId].update({
-          selectedWellIds: wellIdsArray,
-          updatedAt: now,
-          updatedBy: userId,
-        })
-      ).catch((error: any) => {
-        console.error("Error creating initial settings:", error);
-      }).finally(() => {
-        setSavingSettings(false);
-      });
-    }
-  }, [wells.length, settings, userId, savingSettings, hasLoadedSettings, selectedWellIds.size]);
+      if (!entriesMap.has(key)) {
+        const well = safeWells.find((w: any) => w.id === gauging.wellId) as any;
+        entriesMap.set(key, {
+          wellId: gauging.wellId,
+          wellName: well?.name || "Unknown",
+          date: gauging.timestamp,
+          dateKey,
+          recordIds: {
+            tankGauging: [],
+            meterReadings: [],
+          },
+        });
+      }
+
+      const entry = entriesMap.get(key)!;
+      entry.recordIds.tankGauging.push(gauging.id);
+
+      if (gauging.tankNumber === "Tank 1" || gauging.tankNumber === "1") {
+        const level = gauging.level || 0;
+        const totalInches = level * 12; // Convert to total inches
+        entry.tank1 = totalInches;
+      } else if (gauging.tankNumber === "Tank 2" || gauging.tankNumber === "2") {
+        const level = gauging.level || 0;
+        const totalInches = level * 12; // Convert to total inches
+        entry.tank2 = totalInches;
+      } else if (gauging.tankNumber === "Tank 3" || gauging.tankNumber === "3") {
+        const level = gauging.level || 0;
+        const totalInches = level * 12; // Convert to total inches
+        entry.tank3 = totalInches;
+      }
+
+      // Get comment from metadata if available
+      if (gauging.metadata?.comment && !entry.comment) {
+        entry.comment = gauging.metadata.comment;
+      }
+    });
+
+    // Process meter readings
+    safeReadings.forEach((reading: any) => {
+      if (!reading || !reading.wellId || !reading.timestamp) return;
+      
+      let dateKey = "";
+      try {
+        dateKey = timestampToDateString(reading.timestamp);
+      } catch (error) {
+        console.error("Error parsing reading timestamp:", error, reading);
+        return;
+      }
+      const key = `${reading.wellId}_${dateKey}`;
+      
+      if (!entriesMap.has(key)) {
+        const well = safeWells.find((w: any) => w.id === reading.wellId) as any;
+        entriesMap.set(key, {
+          wellId: reading.wellId,
+          wellName: well?.name || "Unknown",
+          date: reading.timestamp,
+          dateKey,
+          recordIds: {
+            tankGauging: [],
+            meterReadings: [],
+          },
+        });
+      }
+
+      const entry = entriesMap.get(key)!;
+      entry.recordIds.meterReadings.push(reading.id);
+
+      const meterType = reading.meterType || "";
+      if (meterType === "Gas Rate" || meterType === "gas rate") {
+        entry.gasRate = reading.value;
+      } else if (meterType === "Instant Gas Rate" || meterType === "instant gas rate") {
+        entry.instantGasRate = reading.value;
+      } else if (meterType === "Tubing Pressure" || meterType === "tubing pressure") {
+        entry.tubingPressure = reading.value;
+      } else if (meterType === "Casing Pressure" || meterType === "casing pressure") {
+        entry.casingPressure = reading.value;
+      } else if (meterType === "Line Pressure" || meterType === "line pressure") {
+        entry.linePressure = reading.value;
+      }
+
+      // Get comment from metadata if available
+      if (reading.metadata?.comment && !entry.comment) {
+        entry.comment = reading.metadata.comment;
+      }
+    });
+
+    // Convert map to array and sort by date (newest first)
+    return Array.from(entriesMap.values()).sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return dateB - dateA;
+    });
+  }, [safeGaugings, safeReadings, safeWells]);
+
+  // Filter entries by date if selected
+  const filteredEntries = useMemo(() => {
+    if (!selectedDateFilter) return groupedEntries;
+    return groupedEntries.filter((entry) => entry.dateKey === selectedDateFilter);
+  }, [groupedEntries, selectedDateFilter]);
+
+  // Get available dates for filter
+  const availableDates = useMemo(() => {
+    const dateSet = new Set<string>();
+    groupedEntries.forEach((entry) => {
+      dateSet.add(entry.dateKey);
+    });
+    return Array.from(dateSet).sort().reverse();
+  }, [groupedEntries]);
+
+  // Filter wells based on search query
+  const filteredWells = useMemo(() => {
+    return safeWells.filter((well: any) => {
+      if (!well) return false;
+      const searchLower = wellSearchQuery.toLowerCase();
+      const wellName = (well as any)?.name?.toLowerCase() || "";
+      return wellName.includes(searchLower);
+    });
+  }, [safeWells, wellSearchQuery]);
 
   if (!userId) {
     router.push("/login");
     return null;
   }
 
-  const toggleWell = (wellId: string) => {
-    const newExpanded = new Set(expandedWells);
-    if (newExpanded.has(wellId)) {
-      newExpanded.delete(wellId);
-    } else {
-      newExpanded.add(wellId);
-    }
-    setExpandedWells(newExpanded);
+  // Get the selected well's display name
+  const selectedWellName = formData.wellId
+    ? (() => {
+        const well = safeWells.find((w: any) => w.id === formData.wellId);
+        return well ? (well as any).name : "";
+      })()
+    : "";
+
+  const handleWellSelect = (wellId: string, wellName: string) => {
+    setFormData({ ...formData, wellId });
+    setWellSearchQuery(wellName);
+    setShowWellDropdown(false);
   };
 
-  // Save selected wells to InstantDB (shared across all users)
-  const saveSelectedWells = async (wellIds: Set<string>) => {
-    if (!userId) {
-      console.warn("Cannot save: no userId");
-      return;
-    }
-    if (savingSettings) {
-      console.warn("Already saving settings, skipping");
-      return;
-    }
-    
-    const wellIdsArray = Array.from(wellIds); // Can be empty array
-    console.log("Saving selected wells to InstantDB:", wellIdsArray.length, "wells", wellIdsArray);
-    
-    setIsUserChangingSelection(true);
-    setSavingSettings(true);
-    try {
-      const now = new Date().toISOString();
-      
-      // Use existing settings ID if available, otherwise create new one
-      let settingsId: string;
-      if (settings?.id) {
-        settingsId = settings.id;
-        console.log("Using existing settings ID:", settingsId);
-        
-        // Update existing settings
-        await db.transact(
-          db.tx.fieldEntrySettings[settingsId].update({
-            selectedWellIds: wellIdsArray,
-            updatedAt: now,
-            updatedBy: userId,
-          })
-        );
-      } else {
-        // Create new settings record
-        settingsId = id();
-        console.log("Creating new settings with ID:", settingsId);
-        
-        await db.transact(
-          db.tx.fieldEntrySettings[settingsId].update({
-            selectedWellIds: wellIdsArray,
-            updatedAt: now,
-            updatedBy: userId,
-          })
-        );
+  const resetForm = () => {
+    let defaultDate = "";
+    if (typeof window !== "undefined") {
+      try {
+        defaultDate = getTodayCST();
+      } catch (error) {
+        defaultDate = new Date().toISOString().slice(0, 10);
       }
-      
-      console.log("Successfully saved selected wells:", wellIdsArray.length, "wells");
-      
-      // Wait a bit before allowing sync again to prevent race conditions
-      setTimeout(() => {
-        setIsUserChangingSelection(false);
-        console.log("User change flag cleared, sync enabled again");
-      }, 1000);
-    } catch (error: any) {
-      console.error("Error saving selected wells:", error);
-      setIsUserChangingSelection(false);
-      alert(`Error saving well selection: ${error.message || "Unknown error"}`);
-      // Still update local state even if save fails
-    } finally {
-      setSavingSettings(false);
-    }
-  };
-
-  const toggleWellSelection = async (wellId: string) => {
-    console.log("Toggling well:", wellId, "Current selection size:", selectedWellIds.size);
-    const newSelected = new Set(selectedWellIds);
-    if (newSelected.has(wellId)) {
-      newSelected.delete(wellId);
-      console.log("Deselected well:", wellId, "New selection size:", newSelected.size);
     } else {
-      newSelected.add(wellId);
-      console.log("Selected well:", wellId, "New selection size:", newSelected.size);
+      defaultDate = new Date().toISOString().slice(0, 10);
     }
-    setSelectedWellIds(newSelected);
-    // Save to InstantDB (shared)
-    await saveSelectedWells(newSelected);
+    setFormData({
+      wellId: "",
+      date: defaultDate,
+      tank1Inches: "",
+      tank2Inches: "",
+      tank3Inches: "",
+      gasRate: "",
+      instantGasRate: "",
+      tubingPressure: "",
+      casingPressure: "",
+      linePressure: "",
+      comment: "",
+    });
+    setWellSearchQuery("");
+    setEditingEntry(null);
+    setShowForm(false);
   };
 
-  const selectAllWells = async () => {
-    console.log("Selecting all wells");
-    const allIds = new Set(wells.map((w: any) => w.id));
-    setSelectedWellIds(allIds);
-    await saveSelectedWells(allIds);
-  };
-
-  const deselectAllWells = async () => {
-    console.log("Deselecting all wells");
-    const emptySet = new Set<string>();
-    setSelectedWellIds(emptySet);
-    await saveSelectedWells(emptySet);
-  };
-
-  // Filter wells based on selection
-  const displayedWells = wells.filter((w: any) => selectedWellIds.has(w.id));
-
-  const updateEntry = (wellId: string, field: keyof WellEntry, value: string) => {
-    setEntries(entries.map(entry => 
-      entry.wellId === wellId ? { ...entry, [field]: value } : entry
-    ));
-  };
-
-  const hasAnyData = (entry: WellEntry) => {
-    return Boolean(
-      entry.tank1Feet || entry.tank1Inches ||
-      entry.tank2Feet || entry.tank2Inches ||
-      entry.tank3Feet || entry.tank3Inches ||
-      entry.gasRate || entry.instantGasRate ||
-      entry.tubingPressure || entry.casingPressure || entry.linePressure ||
-      entry.comment
-    );
-  };
-
-  const checkExistingData = (wellId: string, dateToCheck: string) => {
-    const dateKey = dateToCheck.split('T')[0];
+  // Inline editing functions
+  const startEditing = (entry: GroupedEntry, field: string) => {
+    const entryKey = `${entry.wellId}_${entry.dateKey}`;
+    let value = "";
     
-    // Check for existing gaugings
-    const existingGaugings = gaugings.filter((g: any) => {
-      if (g.wellId !== wellId) return false;
-      const gaugingDateKey = (g.timestamp || g.createdAt || '').split('T')[0];
-      return gaugingDateKey === dateKey;
-    });
-
-    // Check for existing readings
-    const existingReadings = readings.filter((r: any) => {
-      if (r.wellId !== wellId) return false;
-      const readingDateKey = (r.timestamp || r.createdAt || '').split('T')[0];
-      return readingDateKey === dateKey;
-    });
-
-    return {
-      hasExisting: existingGaugings.length > 0 || existingReadings.length > 0,
-      gaugings: existingGaugings,
-      readings: existingReadings
-    };
+    if (field.startsWith("tank")) {
+      const tankNum = field.replace("tank", "");
+      const tankValue = entry[`tank${tankNum}` as keyof GroupedEntry] as number | undefined;
+      value = tankValue?.toFixed(2) || "";
+    } else {
+      const fieldValue = entry[field as keyof GroupedEntry];
+      value = fieldValue?.toString() || "";
+    }
+    
+    setEditingCell({ entryKey, field, value });
   };
 
-  const saveWellData = async (wellId: string) => {
+  const cancelEditing = () => {
+    setEditingCell(null);
+  };
+
+  const saveCellEdit = async (entry: GroupedEntry, field: string, newValue: string) => {
     if (!userId) return;
-
-    setSavingWellId(wellId);
-    const entry = entries.find(e => e.wellId === wellId);
-    if (!entry || !hasAnyData(entry)) {
-      alert("No data to save for this well.");
-      setSavingWellId(null);
+    
+    setEditingCell(null);
+    
+    // Parse the new value
+    const numValue = parseFloat(newValue);
+    if (isNaN(numValue) && newValue.trim() !== "") {
+      alert("Please enter a valid number");
       return;
     }
 
-    const timestamp = new Date(`${date}T12:00:00Z`).toISOString();
-    
-    // Check for existing data
-    const existing = checkExistingData(wellId, timestamp);
-    if (existing.hasExisting) {
-      const wellName = getWellName(wellId);
-      const confirmed = confirm(
-        `Data already exists for ${wellName} on ${date}.\n\n` +
-        `Existing: ${existing.gaugings.length} tank reading(s), ${existing.readings.length} meter reading(s)\n\n` +
-        `Do you want to REPLACE the existing data with new data?`
-      );
-      
-      if (!confirmed) {
-        setSavingWellId(null);
-        return;
-      }
-    }
-
-    const transactions: any[] = [];
+    const timestamp = dateToCSTTimestamp(entry.dateKey);
     const now = new Date().toISOString();
+    const transactions: any[] = [];
     const metadata = entry.comment ? { comment: entry.comment } : undefined;
 
-    try {
-      // Delete existing data first
-      if (existing.hasExisting) {
-        existing.gaugings.forEach((g: any) => {
-          transactions.push(db.tx.tankGauging[g.id].delete());
-        });
-        existing.readings.forEach((r: any) => {
-          transactions.push(db.tx.meterReadings[r.id].delete());
-        });
+    // Handle tank updates
+    if (field.startsWith("tank")) {
+      const tankNum = field.replace("tank", "");
+      const tankNumber = `Tank ${tankNum}`;
+      
+        // Delete existing tank gauging for this tank
+        const existingGauging = safeGaugings.find(
+          (g: any) =>
+            (g as any).wellId === entry.wellId &&
+            (g as any).tankNumber === tankNumber &&
+            timestampToDateString((g as any).timestamp) === entry.dateKey
+        ) as any;
+      
+      if (existingGauging) {
+        transactions.push(db.tx.tankGauging[existingGauging.id].delete());
       }
-
-      // Tank 1
-      if (entry.tank1Feet || entry.tank1Inches) {
-        const feet = parseFloat(entry.tank1Feet || "0");
-        const inches = parseFloat(entry.tank1Inches || "0");
-        const level = feet + inches / 12;
+      
+      // Create new tank gauging if value provided
+      if (newValue.trim() !== "" && !isNaN(numValue)) {
+        const level = numValue / 12; // Convert inches to feet
         transactions.push(
           db.tx.tankGauging[id()].update({
             wellId: entry.wellId,
+            level,
+            timestamp,
+            tankNumber,
+            userId,
+            metadata,
+            createdAt: now,
+          })
+        );
+      }
+    } else {
+      // Handle meter reading updates
+      let meterType = "";
+      let unit = "";
+      
+      if (field === "gasRate") {
+        meterType = "Gas Rate";
+        unit = "MCF";
+      } else if (field === "instantGasRate") {
+        meterType = "Instant Gas Rate";
+        unit = "MCF";
+      } else if (field === "tubingPressure") {
+        meterType = "Tubing Pressure";
+        unit = "PSI";
+      } else if (field === "casingPressure") {
+        meterType = "Casing Pressure";
+        unit = "PSI";
+      } else if (field === "linePressure") {
+        meterType = "Line Pressure";
+        unit = "PSI";
+      }
+      
+      if (meterType) {
+        // Delete existing reading
+        const existingReading = safeReadings.find(
+          (r: any) =>
+            (r as any).wellId === entry.wellId &&
+            (r as any).meterType === meterType &&
+            timestampToDateString((r as any).timestamp) === entry.dateKey
+        ) as any;
+        
+        if (existingReading) {
+          transactions.push(db.tx.meterReadings[existingReading.id].delete());
+        }
+        
+        // Create new reading if value provided
+        if (newValue.trim() !== "" && !isNaN(numValue)) {
+          transactions.push(
+            db.tx.meterReadings[id()].update({
+              wellId: entry.wellId,
+              value: numValue,
+              timestamp,
+              meterType,
+              unit,
+              userId,
+              metadata: field.includes("Pressure") ? metadata : undefined,
+              createdAt: now,
+            })
+          );
+        }
+      } else if (field === "comment") {
+        // Update comment in all related records
+        const allRecordIds = [
+          ...entry.recordIds.tankGauging,
+          ...entry.recordIds.meterReadings,
+        ];
+        
+        allRecordIds.forEach((recordId) => {
+          // Update tank gauging metadata
+          const gauging = safeGaugings.find((g: any) => (g as any).id === recordId) as any;
+          if (gauging) {
+            transactions.push(
+              db.tx.tankGauging[recordId].update({
+                metadata: newValue.trim() ? { comment: newValue.trim() } : undefined,
+              })
+            );
+          }
+          
+          // Update meter reading metadata (only for pressures)
+          const reading = safeReadings.find((r: any) => (r as any).id === recordId) as any;
+          if (reading && (reading as any).meterType?.includes("Pressure")) {
+            transactions.push(
+              db.tx.meterReadings[recordId].update({
+                metadata: newValue.trim() ? { comment: newValue.trim() } : undefined,
+              })
+            );
+          }
+        });
+      }
+    }
+
+    if (transactions.length > 0) {
+      try {
+        await db.transact(transactions);
+      } catch (error: any) {
+        alert(`Error updating field: ${error.message}`);
+      }
+    }
+  };
+
+  const handleDelete = async (entry: GroupedEntry) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete the field entry for ${entry.wellName} on ${format(new Date(entry.date), "MMM d, yyyy")}?`
+    );
+    if (!confirmed) return;
+
+    try {
+      const transactions: any[] = [];
+      
+      // Delete all tank gauging records
+      entry.recordIds.tankGauging.forEach((id) => {
+        transactions.push(db.tx.tankGauging[id].delete());
+      });
+      
+      // Delete all meter reading records
+      entry.recordIds.meterReadings.forEach((id) => {
+        transactions.push(db.tx.meterReadings[id].delete());
+      });
+
+      if (transactions.length > 0) {
+        await db.transact(transactions);
+      }
+    } catch (error: any) {
+      alert(`Error deleting entry: ${error.message}`);
+    }
+  };
+
+  const checkExistingData = (wellId: string, dateKey: string): boolean => {
+    return groupedEntries.some(
+      (entry) => entry.wellId === wellId && entry.dateKey === dateKey
+    );
+  };
+
+  const handleSubmit = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+    }
+    if (!userId) {
+      alert("You must be logged in to save field entries.");
+      return;
+    }
+
+    // Validate required fields
+    if (!formData.wellId) {
+      alert("Please select a well.");
+      return;
+    }
+    if (!formData.date) {
+      alert("Please select a date.");
+      return;
+    }
+
+    // Check if we have any data to save
+    const hasData =
+      formData.tank1Inches ||
+      formData.tank2Inches ||
+      formData.tank3Inches ||
+      formData.gasRate ||
+      formData.instantGasRate ||
+      formData.tubingPressure ||
+      formData.casingPressure ||
+      formData.linePressure ||
+      formData.comment;
+
+    if (!hasData) {
+      alert("Please enter at least one field value.");
+      return;
+    }
+
+    // Check for existing data (unless we're editing this exact entry)
+    const dateKey = formData.date;
+    const isEditing = editingEntry !== null;
+    const isOverriding = checkExistingData(formData.wellId, dateKey);
+    
+    if (isOverriding && (!isEditing || editingEntry.dateKey !== dateKey || editingEntry.wellId !== formData.wellId)) {
+      const well = safeWells.find((w: any) => w.id === formData.wellId) as any;
+      const wellName = well?.name || "Unknown";
+      const confirmed = window.confirm(
+        `Data already exists for ${wellName} on ${format(new Date(dateKey + "T00:00:00"), "MMM d, yyyy")}.\n\nDo you want to REPLACE the existing data with new data?`
+      );
+      if (!confirmed) return;
+    }
+
+    setSubmitting(true);
+    try {
+      const timestamp = dateToCSTTimestamp(formData.date);
+      const now = new Date().toISOString();
+      const transactions: any[] = [];
+
+      // If editing, delete existing records first
+      if (isEditing && editingEntry) {
+        editingEntry.recordIds.tankGauging.forEach((id) => {
+          transactions.push(db.tx.tankGauging[id].delete());
+        });
+        editingEntry.recordIds.meterReadings.forEach((id) => {
+          transactions.push(db.tx.meterReadings[id].delete());
+        });
+      } else if (isOverriding) {
+        // Delete existing records for this well/date
+        const existingEntry = groupedEntries.find(
+          (e) => e.wellId === formData.wellId && e.dateKey === dateKey
+        );
+        if (existingEntry) {
+          existingEntry.recordIds.tankGauging.forEach((id) => {
+            transactions.push(db.tx.tankGauging[id].delete());
+          });
+          existingEntry.recordIds.meterReadings.forEach((id) => {
+            transactions.push(db.tx.meterReadings[id].delete());
+          });
+        }
+      }
+
+      const metadata = formData.comment ? { comment: formData.comment } : undefined;
+
+      // Create tank gauging records (convert inches to level)
+      if (formData.tank1Inches) {
+        const totalInches = parseFloat(formData.tank1Inches);
+        const level = totalInches / 12; // Convert inches to feet
+        transactions.push(
+          db.tx.tankGauging[id()].update({
+            wellId: formData.wellId,
             level,
             timestamp,
             tankNumber: "Tank 1",
@@ -384,14 +623,12 @@ export default function FieldEntryPage() {
         );
       }
 
-      // Tank 2
-      if (entry.tank2Feet || entry.tank2Inches) {
-        const feet = parseFloat(entry.tank2Feet || "0");
-        const inches = parseFloat(entry.tank2Inches || "0");
-        const level = feet + inches / 12;
+      if (formData.tank2Inches) {
+        const totalInches = parseFloat(formData.tank2Inches);
+        const level = totalInches / 12; // Convert inches to feet
         transactions.push(
           db.tx.tankGauging[id()].update({
-            wellId: entry.wellId,
+            wellId: formData.wellId,
             level,
             timestamp,
             tankNumber: "Tank 2",
@@ -402,14 +639,12 @@ export default function FieldEntryPage() {
         );
       }
 
-      // Tank 3
-      if (entry.tank3Feet || entry.tank3Inches) {
-        const feet = parseFloat(entry.tank3Feet || "0");
-        const inches = parseFloat(entry.tank3Inches || "0");
-        const level = feet + inches / 12;
+      if (formData.tank3Inches) {
+        const totalInches = parseFloat(formData.tank3Inches);
+        const level = totalInches / 12; // Convert inches to feet
         transactions.push(
           db.tx.tankGauging[id()].update({
-            wellId: entry.wellId,
+            wellId: formData.wellId,
             level,
             timestamp,
             tankNumber: "Tank 3",
@@ -420,12 +655,12 @@ export default function FieldEntryPage() {
         );
       }
 
-      // Gas Rate
-      if (entry.gasRate) {
+      // Create meter reading records
+      if (formData.gasRate) {
         transactions.push(
           db.tx.meterReadings[id()].update({
-            wellId: entry.wellId,
-            value: parseFloat(entry.gasRate),
+            wellId: formData.wellId,
+            value: parseFloat(formData.gasRate),
             timestamp,
             meterType: "Gas Rate",
             unit: "MCF",
@@ -435,12 +670,11 @@ export default function FieldEntryPage() {
         );
       }
 
-      // Instant Gas Rate
-      if (entry.instantGasRate) {
+      if (formData.instantGasRate) {
         transactions.push(
           db.tx.meterReadings[id()].update({
-            wellId: entry.wellId,
-            value: parseFloat(entry.instantGasRate),
+            wellId: formData.wellId,
+            value: parseFloat(formData.instantGasRate),
             timestamp,
             meterType: "Instant Gas Rate",
             unit: "MCF",
@@ -450,46 +684,46 @@ export default function FieldEntryPage() {
         );
       }
 
-      // Tubing Pressure
-      if (entry.tubingPressure) {
+      if (formData.tubingPressure) {
         transactions.push(
           db.tx.meterReadings[id()].update({
-            wellId: entry.wellId,
-            value: parseFloat(entry.tubingPressure),
+            wellId: formData.wellId,
+            value: parseFloat(formData.tubingPressure),
             timestamp,
             meterType: "Tubing Pressure",
             unit: "PSI",
             userId,
+            metadata,
             createdAt: now,
           })
         );
       }
 
-      // Casing Pressure
-      if (entry.casingPressure) {
+      if (formData.casingPressure) {
         transactions.push(
           db.tx.meterReadings[id()].update({
-            wellId: entry.wellId,
-            value: parseFloat(entry.casingPressure),
+            wellId: formData.wellId,
+            value: parseFloat(formData.casingPressure),
             timestamp,
             meterType: "Casing Pressure",
             unit: "PSI",
             userId,
+            metadata,
             createdAt: now,
           })
         );
       }
 
-      // Line Pressure
-      if (entry.linePressure) {
+      if (formData.linePressure) {
         transactions.push(
           db.tx.meterReadings[id()].update({
-            wellId: entry.wellId,
-            value: parseFloat(entry.linePressure),
+            wellId: formData.wellId,
+            value: parseFloat(formData.linePressure),
             timestamp,
             meterType: "Line Pressure",
             unit: "PSI",
             userId,
+            metadata,
             createdAt: now,
           })
         );
@@ -497,606 +731,687 @@ export default function FieldEntryPage() {
 
       if (transactions.length > 0) {
         await db.transact(transactions);
-        alert(`Saved ${transactions.length} readings for this well!`);
-        // Clear this well's entry
-        setEntries(entries.map(e => 
-          e.wellId === wellId ? { wellId } : e
-        ));
-        // Collapse the well
-        const newExpanded = new Set(expandedWells);
-        newExpanded.delete(wellId);
-        setExpandedWells(newExpanded);
-      }
-    } catch (error: any) {
-      alert(`Error saving data: ${error.message}`);
-    } finally {
-      setSavingWellId(null);
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!userId) return;
-
-    // Check which wells have data to save
-    const wellsToSave = entries.filter(entry => entry.wellId && hasAnyData(entry));
-    if (wellsToSave.length === 0) {
-      alert("No data to save. Please enter at least one reading.");
-      return;
-    }
-
-    // Check for existing data for any of the wells
-    const timestamp = new Date(`${date}T12:00:00Z`).toISOString();
-    const wellsWithExisting = wellsToSave.filter(entry => {
-      const existing = checkExistingData(entry.wellId, timestamp);
-      return existing.hasExisting;
-    });
-
-    if (wellsWithExisting.length > 0) {
-      const wellNames = wellsWithExisting.map(entry => getWellName(entry.wellId)).join(', ');
-      const confirmed = confirm(
-        `Existing data found for ${wellsWithExisting.length} well(s) on ${date}:\n\n` +
-        `${wellNames}\n\n` +
-        `Do you want to REPLACE all existing data with new data?`
-      );
-      
-      if (!confirmed) {
-        return;
-      }
-    }
-
-    setSubmitting(true);
-    const transactions: any[] = [];
-    const now = new Date().toISOString();
-
-    try {
-      // First, delete all existing data for wells we're saving
-      wellsToSave.forEach((entry) => {
-        const existing = checkExistingData(entry.wellId, timestamp);
-        if (existing.hasExisting) {
-          existing.gaugings.forEach((g: any) => {
-            transactions.push(db.tx.tankGauging[g.id].delete());
-          });
-          existing.readings.forEach((r: any) => {
-            transactions.push(db.tx.meterReadings[r.id].delete());
-          });
-        }
-      });
-
-      // Then add new data
-      entries.forEach((entry) => {
-        if (!entry.wellId || !hasAnyData(entry)) return;
-
-        const metadata = entry.comment ? { comment: entry.comment } : undefined;
-
-        // Tank 1
-        if (entry.tank1Feet || entry.tank1Inches) {
-          const feet = parseFloat(entry.tank1Feet || "0");
-          const inches = parseFloat(entry.tank1Inches || "0");
-          const level = feet + inches / 12;
-          transactions.push(
-            db.tx.tankGauging[id()].update({
-              wellId: entry.wellId,
-              level,
-              timestamp,
-              tankNumber: "Tank 1",
-              userId,
-              metadata,
-              createdAt: now,
-            })
-          );
-        }
-
-        // Tank 2
-        if (entry.tank2Feet || entry.tank2Inches) {
-          const feet = parseFloat(entry.tank2Feet || "0");
-          const inches = parseFloat(entry.tank2Inches || "0");
-          const level = feet + inches / 12;
-          transactions.push(
-            db.tx.tankGauging[id()].update({
-              wellId: entry.wellId,
-              level,
-              timestamp,
-              tankNumber: "Tank 2",
-              userId,
-              metadata,
-              createdAt: now,
-            })
-          );
-        }
-
-        // Tank 3
-        if (entry.tank3Feet || entry.tank3Inches) {
-          const feet = parseFloat(entry.tank3Feet || "0");
-          const inches = parseFloat(entry.tank3Inches || "0");
-          const level = feet + inches / 12;
-          transactions.push(
-            db.tx.tankGauging[id()].update({
-              wellId: entry.wellId,
-              level,
-              timestamp,
-              tankNumber: "Tank 3",
-              userId,
-              metadata,
-              createdAt: now,
-            })
-          );
-        }
-
-        // Gas Rate
-        if (entry.gasRate) {
-          transactions.push(
-            db.tx.meterReadings[id()].update({
-              wellId: entry.wellId,
-              value: parseFloat(entry.gasRate),
-              timestamp,
-              meterType: "Gas Rate",
-              unit: "MCF",
-              userId,
-              createdAt: now,
-            })
-          );
-        }
-
-        // Instant Gas Rate
-        if (entry.instantGasRate) {
-          transactions.push(
-            db.tx.meterReadings[id()].update({
-              wellId: entry.wellId,
-              value: parseFloat(entry.instantGasRate),
-              timestamp,
-              meterType: "Instant Gas Rate",
-              unit: "MCF",
-              userId,
-              createdAt: now,
-            })
-          );
-        }
-
-        // Tubing Pressure
-        if (entry.tubingPressure) {
-          transactions.push(
-            db.tx.meterReadings[id()].update({
-              wellId: entry.wellId,
-              value: parseFloat(entry.tubingPressure),
-              timestamp,
-              meterType: "Tubing Pressure",
-              unit: "PSI",
-              userId,
-              createdAt: now,
-            })
-          );
-        }
-
-        // Casing Pressure
-        if (entry.casingPressure) {
-          transactions.push(
-            db.tx.meterReadings[id()].update({
-              wellId: entry.wellId,
-              value: parseFloat(entry.casingPressure),
-              timestamp,
-              meterType: "Casing Pressure",
-              unit: "PSI",
-              userId,
-              createdAt: now,
-            })
-          );
-        }
-
-        // Line Pressure
-        if (entry.linePressure) {
-          transactions.push(
-            db.tx.meterReadings[id()].update({
-              wellId: entry.wellId,
-              value: parseFloat(entry.linePressure),
-              timestamp,
-              meterType: "Line Pressure",
-              unit: "PSI",
-              userId,
-              createdAt: now,
-            })
-          );
-        }
-      });
-
-      if (transactions.length > 0) {
-        await db.transact(transactions);
-        alert(`Successfully saved ${transactions.length} readings!`);
-        // Clear entries
-        setEntries(wells.map((w: any) => ({ wellId: w.id })));
-        setExpandedWells(new Set());
+        alert(isEditing ? "Field entry updated successfully!" : "Field entry saved successfully!");
+        resetForm();
       } else {
-        alert("No data to save. Please enter at least one reading.");
+        alert("No data to save. Please enter at least one field value.");
       }
     } catch (error: any) {
-      alert(`Error saving data: ${error.message}`);
+      console.error("Error saving field entry:", error);
+      alert(`Error saving field entry: ${error.message || "Unknown error"}`);
     } finally {
       setSubmitting(false);
     }
   };
 
-  const getWellName = (wellId: string) => {
-    const well = wells.find((w: any) => w.id === wellId);
-    return well ? `${(well as any).wellNumber} - ${(well as any).name}` : "Unknown";
-  };
-
   return (
-    <div className="pb-20">
-      {/* Custom styles to hide number input arrows */}
-      <style jsx>{`
-        input[type="number"]::-webkit-inner-spin-button,
-        input[type="number"]::-webkit-outer-spin-button {
-          -webkit-appearance: none;
-          margin: 0;
-        }
-        input[type="number"] {
-          -moz-appearance: textfield;
-        }
-      `}</style>
-      
-      {/* Header - Sticky */}
-      <div className="sticky top-16 z-10 bg-white shadow-sm border-b border-gray-200">
-        <div className="px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-tepui-gray">Field Data Entry</h1>
-              <p className="text-sm text-gray-600 mt-1">
-                {displayedWells.length} of {wells.length} wells shown
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowWellSelector(!showWellSelector)}
-              className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-tepui-blue"
-            >
-              <svg className="h-5 w-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-              </svg>
-              Select Wells
-            </button>
-          </div>
-          
-          {/* Well Selector Dropdown */}
-          {showWellSelector && (
-            <div className="mt-4 border border-gray-200 rounded-lg bg-gray-50 p-3 max-h-60 overflow-y-auto">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-gray-700">Select wells to display:</span>
-                <div className="space-x-2">
-                  <button
-                    type="button"
-                    onClick={selectAllWells}
-                    className="text-xs text-tepui-blue hover:text-blue-700 font-medium"
-                  >
-                    All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={deselectAllWells}
-                    className="text-xs text-gray-600 hover:text-gray-800 font-medium"
-                  >
-                    None
-                  </button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {wells.map((well: any) => (
-                  <label key={well.id} className="flex items-center space-x-2 cursor-pointer hover:bg-white p-2 rounded">
-                    <input
-                      type="checkbox"
-                      checked={selectedWellIds.has(well.id)}
-                      onChange={() => toggleWellSelection(well.id)}
-                      className="rounded border-gray-300 text-tepui-blue focus:ring-tepui-blue"
-                    />
-                    <span className="text-sm text-gray-900">
-                      {well.wellNumber} - {well.name}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Date Picker */}
-          <div className="mt-4">
-            <label htmlFor="date" className="block text-sm font-medium text-gray-700 mb-1">
-              Date
-            </label>
-            <input
-              type="date"
-              id="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-tepui-blue focus:border-tepui-blue text-base p-3 border"
-            />
-          </div>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="mb-8 flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-tepui-gray">Field Data Entry</h1>
+          <p className="mt-2 text-gray-600">
+            Enter and track daily field data for wells
+          </p>
         </div>
+        <button
+          onClick={() => {
+            resetForm();
+            setShowForm(true);
+          }}
+          className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-tepui-blue hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-tepui-blue"
+        >
+          New Entry
+        </button>
       </div>
 
-      {/* Table View */}
-      <form onSubmit={handleSubmit} className="p-4">
-        {wells.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-lg shadow">
-            <p className="text-gray-600">No active wells found</p>
-          </div>
-        ) : displayedWells.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-lg shadow">
-            <p className="text-gray-600 mb-2">No wells selected</p>
-            <button
-              type="button"
-              onClick={() => setShowWellSelector(true)}
-              className="text-tepui-blue hover:text-blue-700 font-medium text-sm"
+      <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
+        <div className="px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+          <h2 className="text-base font-medium text-gray-900">Field Entries</h2>
+          <div className="flex items-center gap-3">
+            <label htmlFor="date-filter" className="text-xs text-gray-700">
+              Filter by Date:
+            </label>
+            <select
+              id="date-filter"
+              value={selectedDateFilter}
+              onChange={(e) => setSelectedDateFilter(e.target.value)}
+              className="block border-gray-300 rounded-md shadow-sm focus:ring-tepui-blue focus:border-tepui-blue text-sm p-1.5 border"
             >
-              Select wells to display
-            </button>
+              <option value="">All Dates</option>
+              {availableDates.map((date) => (
+                <option key={date} value={date}>
+                  {format(new Date(date + "T00:00:00"), "MMM d, yyyy")}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {filteredEntries.length === 0 && !showForm ? (
+          <div className="p-8 text-center">
+            <p className="text-sm text-gray-600">
+              {selectedDateFilter
+                ? "No field entries found for the selected date."
+                : "No field entries found. Create your first field entry."}
+            </p>
           </div>
         ) : (
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50 sticky top-0">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider sticky left-0 bg-gray-50 z-10">
-                      Well Name
-                    </th>
-                    <th className="px-2 py-2 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider" colSpan={2}>
-                      Tank 1
-                    </th>
-                    <th className="px-2 py-2 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider" colSpan={2}>
-                      Tank 2
-                    </th>
-                    <th className="px-2 py-2 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider" colSpan={2}>
-                      Tank 3
-                    </th>
-                    <th className="px-2 py-2 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Gas Rate
-                    </th>
-                    <th className="px-2 py-2 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Instant Gas
-                    </th>
-                    <th className="px-2 py-2 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Tubing PSI
-                    </th>
-                    <th className="px-2 py-2 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Casing PSI
-                    </th>
-                    <th className="px-2 py-2 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Line PSI
-                    </th>
-                    <th className="px-2 py-2 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Comments
-                    </th>
-                    <th className="px-2 py-2 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider sticky right-0 bg-gray-50 z-10">
-                      Action
-                    </th>
+          <div className="overflow-x-auto max-h-[calc(100vh-300px)] overflow-y-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50 sticky top-0 z-20">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 top-0 bg-gray-50 z-30 border-r border-gray-200">
+                    Well Name
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-[140px] top-0 bg-gray-50 z-30 border-r border-gray-200">
+                    Date
+                  </th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-[220px] top-0 bg-gray-50 z-30 border-r border-gray-200">
+                    Tank 1<br/><span className="text-[10px] font-normal">(in)</span>
+                  </th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-[300px] top-0 bg-gray-50 z-30 border-r border-gray-200">
+                    Tank 2<br/><span className="text-[10px] font-normal">(in)</span>
+                  </th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-[380px] top-0 bg-gray-50 z-30 border-r border-gray-200">
+                    Tank 3<br/><span className="text-[10px] font-normal">(in)</span>
+                  </th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-[460px] top-0 bg-gray-50 z-30 border-r border-gray-200">
+                    Gas Rate<br/><span className="text-[10px] font-normal">(MCF)</span>
+                  </th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-[540px] top-0 bg-gray-50 z-30 border-r border-gray-200">
+                    Instant Gas<br/><span className="text-[10px] font-normal">(MCF)</span>
+                  </th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Tubing<br/><span className="text-[10px] font-normal">(PSI)</span>
+                  </th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Casing<br/><span className="text-[10px] font-normal">(PSI)</span>
+                  </th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Line<br/><span className="text-[10px] font-normal">(PSI)</span>
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[200px]">
+                    Comments
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky right-0 top-0 bg-gray-50 z-30 border-l border-gray-200">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {showForm && (
+                  <tr className="bg-blue-50 border-b-2 border-tepui-blue">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium sticky left-0 bg-blue-50 z-10 border-r border-gray-200">
+                      <div className="relative" ref={wellDropdownRef}>
+                        <input
+                          type="text"
+                          required
+                          className="w-full border-gray-300 rounded px-2 py-1 text-sm border"
+                          placeholder="Well..."
+                          value={wellSearchQuery}
+                          onChange={(e) => {
+                            setWellSearchQuery(e.target.value);
+                            setShowWellDropdown(true);
+                            if (e.target.value === "") {
+                              setFormData({ ...formData, wellId: "" });
+                            }
+                          }}
+                          onFocus={() => setShowWellDropdown(true)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleSubmit(e as any);
+                            }
+                          }}
+                          autoComplete="off"
+                        />
+                        {showWellDropdown && filteredWells.length > 0 && (
+                          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                            {filteredWells.map((well: any) => (
+                              <div
+                                key={well.id}
+                                className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                onClick={() =>
+                                  handleWellSelect(
+                                    well.id,
+                                    well.name
+                                  )
+                                }
+                              >
+                                {well.name}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {showWellDropdown &&
+                          wellSearchQuery &&
+                          filteredWells.length === 0 && (
+                            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg p-4 text-sm text-gray-500">
+                              No wells found
+                            </div>
+                          )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm sticky left-[140px] bg-blue-50 z-10 border-r border-gray-200">
+                      <input
+                        type="date"
+                        required
+                        className="w-full border-gray-300 rounded px-2 py-1 text-sm border"
+                        value={formData.date}
+                        onChange={(e) =>
+                          setFormData({ ...formData, date: e.target.value })
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleSubmit(e as any);
+                          }
+                        }}
+                      />
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center sticky left-[220px] bg-blue-50 z-10 border-r border-gray-200">
+                      <input
+                        type="number"
+                        step="0.25"
+                        min="0"
+                        className="w-20 text-center border-gray-300 rounded px-1 py-1 text-sm border"
+                        value={formData.tank1Inches}
+                        onChange={(e) =>
+                          setFormData({ ...formData, tank1Inches: e.target.value })
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleSubmit(e as any);
+                          }
+                        }}
+                      />
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center sticky left-[300px] bg-blue-50 z-10 border-r border-gray-200">
+                      <input
+                        type="number"
+                        step="0.25"
+                        min="0"
+                        className="w-20 text-center border-gray-300 rounded px-1 py-1 text-sm border"
+                        value={formData.tank2Inches}
+                        onChange={(e) =>
+                          setFormData({ ...formData, tank2Inches: e.target.value })
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleSubmit(e as any);
+                          }
+                        }}
+                      />
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center sticky left-[380px] bg-blue-50 z-10 border-r border-gray-200">
+                      <input
+                        type="number"
+                        step="0.25"
+                        min="0"
+                        className="w-20 text-center border-gray-300 rounded px-1 py-1 text-sm border"
+                        value={formData.tank3Inches}
+                        onChange={(e) =>
+                          setFormData({ ...formData, tank3Inches: e.target.value })
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleSubmit(e as any);
+                          }
+                        }}
+                      />
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center sticky left-[460px] bg-blue-50 z-10 border-r border-gray-200">
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        className="w-20 text-center border-gray-300 rounded px-1 py-1 text-sm border"
+                        value={formData.gasRate}
+                        onChange={(e) =>
+                          setFormData({ ...formData, gasRate: e.target.value })
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleSubmit(e as any);
+                          }
+                        }}
+                      />
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center sticky left-[540px] bg-blue-50 z-10 border-r border-gray-200">
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        className="w-20 text-center border-gray-300 rounded px-1 py-1 text-sm border"
+                        value={formData.instantGasRate}
+                        onChange={(e) =>
+                          setFormData({ ...formData, instantGasRate: e.target.value })
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleSubmit(e as any);
+                          }
+                        }}
+                      />
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center">
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        className="w-20 text-center border-gray-300 rounded px-1 py-1 text-sm border"
+                        value={formData.tubingPressure}
+                        onChange={(e) =>
+                          setFormData({ ...formData, tubingPressure: e.target.value })
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleSubmit(e as any);
+                          }
+                        }}
+                      />
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center">
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        className="w-20 text-center border-gray-300 rounded px-1 py-1 text-sm border"
+                        value={formData.casingPressure}
+                        onChange={(e) =>
+                          setFormData({ ...formData, casingPressure: e.target.value })
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleSubmit(e as any);
+                          }
+                        }}
+                      />
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center">
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        className="w-20 text-center border-gray-300 rounded px-1 py-1 text-sm border"
+                        value={formData.linePressure}
+                        onChange={(e) =>
+                          setFormData({ ...formData, linePressure: e.target.value })
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleSubmit(e as any);
+                          }
+                        }}
+                      />
+                    </td>
+                    <td className="px-3 py-3 text-sm min-w-[200px]">
+                      <input
+                        type="text"
+                        className="w-full border-gray-300 rounded px-2 py-1 text-sm border"
+                        placeholder="Comments..."
+                        value={formData.comment}
+                        onChange={(e) =>
+                          setFormData({ ...formData, comment: e.target.value })
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleSubmit(e as any);
+                          }
+                        }}
+                      />
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium sticky right-0 bg-blue-50 z-10 border-l border-gray-200">
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={handleSubmit}
+                          disabled={submitting}
+                          className="text-tepui-blue hover:text-blue-700 text-sm disabled:opacity-50"
+                        >
+                          {submitting ? "Saving..." : "Save"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={resetForm}
+                          className="text-gray-500 hover:text-gray-700 text-sm"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </td>
                   </tr>
-                  <tr className="bg-gray-100">
-                    <th className="px-3 py-1 text-left text-xs font-medium text-gray-600 sticky left-0 bg-gray-100 z-10"></th>
-                    <th className="px-2 py-1 text-center text-xs font-medium text-gray-600">Ft</th>
-                    <th className="px-2 py-1 text-center text-xs font-medium text-gray-600">In</th>
-                    <th className="px-2 py-1 text-center text-xs font-medium text-gray-600">Ft</th>
-                    <th className="px-2 py-1 text-center text-xs font-medium text-gray-600">In</th>
-                    <th className="px-2 py-1 text-center text-xs font-medium text-gray-600">Ft</th>
-                    <th className="px-2 py-1 text-center text-xs font-medium text-gray-600">In</th>
-                    <th className="px-2 py-1 text-center text-xs font-medium text-gray-600">MCF</th>
-                    <th className="px-2 py-1 text-center text-xs font-medium text-gray-600">MCF</th>
-                    <th className="px-2 py-1 text-center text-xs font-medium text-gray-600"></th>
-                    <th className="px-2 py-1 text-center text-xs font-medium text-gray-600"></th>
-                    <th className="px-2 py-1 text-center text-xs font-medium text-gray-600"></th>
-                    <th className="px-2 py-1 text-center text-xs font-medium text-gray-600"></th>
-                    <th className="px-2 py-1 text-center text-xs font-medium text-gray-600 sticky right-0 bg-gray-100 z-10"></th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {displayedWells.map((well: any) => {
-                    const entry: WellEntry = entries.find(e => e.wellId === well.id) || { wellId: well.id };
-                    const hasData = hasAnyData(entry);
+                )}
+                {filteredEntries.map((entry, index) => {
+                  const entryKey = `${entry.wellId}_${entry.dateKey}`;
+                  const isEditingTank1 = editingCell?.entryKey === entryKey && editingCell?.field === "tank1";
+                  const isEditingTank2 = editingCell?.entryKey === entryKey && editingCell?.field === "tank2";
+                  const isEditingTank3 = editingCell?.entryKey === entryKey && editingCell?.field === "tank3";
+                  const isEditingGasRate = editingCell?.entryKey === entryKey && editingCell?.field === "gasRate";
+                  const isEditingInstantGas = editingCell?.entryKey === entryKey && editingCell?.field === "instantGasRate";
+                  const isEditingTubing = editingCell?.entryKey === entryKey && editingCell?.field === "tubingPressure";
+                  const isEditingCasing = editingCell?.entryKey === entryKey && editingCell?.field === "casingPressure";
+                  const isEditingLine = editingCell?.entryKey === entryKey && editingCell?.field === "linePressure";
+                  const isEditingComment = editingCell?.entryKey === entryKey && editingCell?.field === "comment";
 
-                    return (
-                      <tr key={well.id} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0 bg-white">
-                          {well.name}
-                        </td>
-                        {/* Tank 1 */}
-                        <td className="px-1 py-2">
-                          <input
-                            type="number"
-                            step="1"
-                            min="0"
-                            placeholder="0"
-                            value={entry.tank1Feet || ""}
-                            onChange={(e) => updateEntry(well.id, "tank1Feet", e.target.value)}
-                            className="w-16 border-gray-300 rounded text-sm p-1 text-center focus:ring-tepui-blue focus:border-tepui-blue"
-                          />
-                        </td>
-                        <td className="px-1 py-2">
+                  return (
+                    <tr key={entryKey} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0 bg-white z-10 border-r border-gray-200">
+                        {entry.wellName}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 sticky left-[140px] bg-white z-10 border-r border-gray-200">
+                        {format(new Date(entry.date), "MMM d, yyyy")}
+                      </td>
+                      <td 
+                        className="px-3 py-3 whitespace-nowrap text-sm text-center text-gray-900 sticky left-[220px] bg-white z-10 border-r border-gray-200 cursor-pointer"
+                        onClick={() => !isEditingTank1 && startEditing(entry, "tank1")}
+                      >
+                        {isEditingTank1 ? (
                           <input
                             type="number"
                             step="0.25"
                             min="0"
-                            max="11.75"
-                            placeholder="0"
-                            value={entry.tank1Inches || ""}
-                            onChange={(e) => updateEntry(well.id, "tank1Inches", e.target.value)}
-                            className="w-16 border-gray-300 rounded text-sm p-1 text-center focus:ring-tepui-blue focus:border-tepui-blue"
+                            className="w-20 text-center border border-tepui-blue rounded px-1 py-0.5 text-sm"
+                            value={editingCell?.value || ""}
+                            autoFocus
+                            onBlur={() => {
+                              if (editingCell) {
+                                saveCellEdit(entry, "tank1", editingCell.value);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                if (editingCell) {
+                                  saveCellEdit(entry, "tank1", editingCell.value);
+                                }
+                              } else if (e.key === "Escape") {
+                                cancelEditing();
+                              }
+                            }}
+                            onChange={(e) => setEditingCell({ ...editingCell!, value: e.target.value })}
                           />
-                        </td>
-                        {/* Tank 2 */}
-                        <td className="px-1 py-2">
-                          <input
-                            type="number"
-                            step="1"
-                            min="0"
-                            placeholder="0"
-                            value={entry.tank2Feet || ""}
-                            onChange={(e) => updateEntry(well.id, "tank2Feet", e.target.value)}
-                            className="w-16 border-gray-300 rounded text-sm p-1 text-center focus:ring-tepui-blue focus:border-tepui-blue"
-                          />
-                        </td>
-                        <td className="px-1 py-2">
-                          <input
-                            type="number"
-                            step="0.25"
-                            min="0"
-                            max="11.75"
-                            placeholder="0"
-                            value={entry.tank2Inches || ""}
-                            onChange={(e) => updateEntry(well.id, "tank2Inches", e.target.value)}
-                            className="w-16 border-gray-300 rounded text-sm p-1 text-center focus:ring-tepui-blue focus:border-tepui-blue"
-                          />
-                        </td>
-                        {/* Tank 3 */}
-                        <td className="px-1 py-2">
-                          <input
-                            type="number"
-                            step="1"
-                            min="0"
-                            placeholder="0"
-                            value={entry.tank3Feet || ""}
-                            onChange={(e) => updateEntry(well.id, "tank3Feet", e.target.value)}
-                            className="w-16 border-gray-300 rounded text-sm p-1 text-center focus:ring-tepui-blue focus:border-tepui-blue"
-                          />
-                        </td>
-                        <td className="px-1 py-2">
+                        ) : (
+                          entry.tank1 ? Math.round(entry.tank1) : "-"
+                        )}
+                      </td>
+                      <td 
+                        className="px-3 py-3 whitespace-nowrap text-sm text-center text-gray-900 sticky left-[300px] bg-white z-10 border-r border-gray-200 cursor-pointer"
+                        onClick={() => !isEditingTank2 && startEditing(entry, "tank2")}
+                      >
+                        {isEditingTank2 ? (
                           <input
                             type="number"
                             step="0.25"
                             min="0"
-                            max="11.75"
-                            placeholder="0"
-                            value={entry.tank3Inches || ""}
-                            onChange={(e) => updateEntry(well.id, "tank3Inches", e.target.value)}
-                            className="w-16 border-gray-300 rounded text-sm p-1 text-center focus:ring-tepui-blue focus:border-tepui-blue"
+                            className="w-20 text-center border border-tepui-blue rounded px-1 py-0.5 text-sm"
+                            value={editingCell?.value || ""}
+                            autoFocus
+                            onBlur={() => {
+                              if (editingCell) {
+                                saveCellEdit(entry, "tank2", editingCell.value);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                if (editingCell) {
+                                  saveCellEdit(entry, "tank2", editingCell.value);
+                                }
+                              } else if (e.key === "Escape") {
+                                cancelEditing();
+                              }
+                            }}
+                            onChange={(e) => setEditingCell({ ...editingCell!, value: e.target.value })}
                           />
-                        </td>
-                        {/* Gas Rate */}
-                        <td className="px-1 py-2">
+                        ) : (
+                          entry.tank2 ? Math.round(entry.tank2) : "-"
+                        )}
+                      </td>
+                      <td 
+                        className="px-3 py-3 whitespace-nowrap text-sm text-center text-gray-900 sticky left-[380px] bg-white z-10 border-r border-gray-200 cursor-pointer"
+                        onClick={() => !isEditingTank3 && startEditing(entry, "tank3")}
+                      >
+                        {isEditingTank3 ? (
+                          <input
+                            type="number"
+                            step="0.25"
+                            min="0"
+                            className="w-20 text-center border border-tepui-blue rounded px-1 py-0.5 text-sm"
+                            value={editingCell?.value || ""}
+                            autoFocus
+                            onBlur={() => {
+                              if (editingCell) {
+                                saveCellEdit(entry, "tank3", editingCell.value);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                if (editingCell) {
+                                  saveCellEdit(entry, "tank3", editingCell.value);
+                                }
+                              } else if (e.key === "Escape") {
+                                cancelEditing();
+                              }
+                            }}
+                            onChange={(e) => setEditingCell({ ...editingCell!, value: e.target.value })}
+                          />
+                        ) : (
+                          entry.tank3 ? Math.round(entry.tank3) : "-"
+                        )}
+                      </td>
+                      <td 
+                        className="px-3 py-3 whitespace-nowrap text-sm text-center text-gray-900 sticky left-[460px] bg-white z-10 border-r border-gray-200 cursor-pointer"
+                        onClick={() => !isEditingGasRate && startEditing(entry, "gasRate")}
+                      >
+                        {isEditingGasRate ? (
                           <input
                             type="number"
                             step="0.1"
                             min="0"
-                            placeholder="0"
-                            value={entry.gasRate || ""}
-                            onChange={(e) => updateEntry(well.id, "gasRate", e.target.value)}
-                            className="w-20 border-gray-300 rounded text-sm p-1 text-center focus:ring-tepui-blue focus:border-tepui-blue"
+                            className="w-20 text-center border border-tepui-blue rounded px-1 py-0.5 text-sm"
+                            value={editingCell?.value || ""}
+                            autoFocus
+                            onBlur={() => {
+                              if (editingCell) {
+                                saveCellEdit(entry, "gasRate", editingCell.value);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                if (editingCell) {
+                                  saveCellEdit(entry, "gasRate", editingCell.value);
+                                }
+                              } else if (e.key === "Escape") {
+                                cancelEditing();
+                              }
+                            }}
+                            onChange={(e) => setEditingCell({ ...editingCell!, value: e.target.value })}
                           />
-                        </td>
-                        {/* Instant Gas Rate */}
-                        <td className="px-1 py-2">
+                        ) : (
+                          entry.gasRate ? Math.round(entry.gasRate) : "-"
+                        )}
+                      </td>
+                      <td 
+                        className="px-3 py-3 whitespace-nowrap text-sm text-center text-gray-900 sticky left-[540px] bg-white z-10 border-r border-gray-200 cursor-pointer"
+                        onClick={() => !isEditingInstantGas && startEditing(entry, "instantGasRate")}
+                      >
+                        {isEditingInstantGas ? (
                           <input
                             type="number"
                             step="0.1"
                             min="0"
-                            placeholder="0"
-                            value={entry.instantGasRate || ""}
-                            onChange={(e) => updateEntry(well.id, "instantGasRate", e.target.value)}
-                            className="w-20 border-gray-300 rounded text-sm p-1 text-center focus:ring-tepui-blue focus:border-tepui-blue"
+                            className="w-20 text-center border border-tepui-blue rounded px-1 py-0.5 text-sm"
+                            value={editingCell?.value || ""}
+                            autoFocus
+                            onBlur={() => {
+                              if (editingCell) {
+                                saveCellEdit(entry, "instantGasRate", editingCell.value);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                if (editingCell) {
+                                  saveCellEdit(entry, "instantGasRate", editingCell.value);
+                                }
+                              } else if (e.key === "Escape") {
+                                cancelEditing();
+                              }
+                            }}
+                            onChange={(e) => setEditingCell({ ...editingCell!, value: e.target.value })}
                           />
-                        </td>
-                        {/* Tubing Pressure */}
-                        <td className="px-1 py-2">
+                        ) : (
+                          entry.instantGasRate ? Math.round(entry.instantGasRate) : "-"
+                        )}
+                      </td>
+                      <td 
+                        className="px-3 py-3 whitespace-nowrap text-sm text-center text-gray-900 cursor-pointer"
+                        onClick={() => !isEditingTubing && startEditing(entry, "tubingPressure")}
+                      >
+                        {isEditingTubing ? (
                           <input
                             type="number"
                             step="0.1"
                             min="0"
-                            placeholder="0"
-                            value={entry.tubingPressure || ""}
-                            onChange={(e) => updateEntry(well.id, "tubingPressure", e.target.value)}
-                            className="w-20 border-gray-300 rounded text-sm p-1 text-center focus:ring-tepui-blue focus:border-tepui-blue"
+                            className="w-20 text-center border border-tepui-blue rounded px-1 py-0.5 text-sm"
+                            value={editingCell?.value || ""}
+                            autoFocus
+                            onBlur={() => {
+                              if (editingCell) {
+                                saveCellEdit(entry, "tubingPressure", editingCell.value);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                if (editingCell) {
+                                  saveCellEdit(entry, "tubingPressure", editingCell.value);
+                                }
+                              } else if (e.key === "Escape") {
+                                cancelEditing();
+                              }
+                            }}
+                            onChange={(e) => setEditingCell({ ...editingCell!, value: e.target.value })}
                           />
-                        </td>
-                        {/* Casing Pressure */}
-                        <td className="px-1 py-2">
+                        ) : (
+                          entry.tubingPressure ? Math.round(entry.tubingPressure) : "-"
+                        )}
+                      </td>
+                      <td 
+                        className="px-3 py-3 whitespace-nowrap text-sm text-center text-gray-900 cursor-pointer"
+                        onClick={() => !isEditingCasing && startEditing(entry, "casingPressure")}
+                      >
+                        {isEditingCasing ? (
                           <input
                             type="number"
                             step="0.1"
                             min="0"
-                            placeholder="0"
-                            value={entry.casingPressure || ""}
-                            onChange={(e) => updateEntry(well.id, "casingPressure", e.target.value)}
-                            className="w-20 border-gray-300 rounded text-sm p-1 text-center focus:ring-tepui-blue focus:border-tepui-blue"
+                            className="w-20 text-center border border-tepui-blue rounded px-1 py-0.5 text-sm"
+                            value={editingCell?.value || ""}
+                            autoFocus
+                            onBlur={() => {
+                              if (editingCell) {
+                                saveCellEdit(entry, "casingPressure", editingCell.value);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                if (editingCell) {
+                                  saveCellEdit(entry, "casingPressure", editingCell.value);
+                                }
+                              } else if (e.key === "Escape") {
+                                cancelEditing();
+                              }
+                            }}
+                            onChange={(e) => setEditingCell({ ...editingCell!, value: e.target.value })}
                           />
-                        </td>
-                        {/* Line Pressure */}
-                        <td className="px-1 py-2">
+                        ) : (
+                          entry.casingPressure ? Math.round(entry.casingPressure) : "-"
+                        )}
+                      </td>
+                      <td 
+                        className="px-3 py-3 whitespace-nowrap text-sm text-center text-gray-900 cursor-pointer"
+                        onClick={() => !isEditingLine && startEditing(entry, "linePressure")}
+                      >
+                        {isEditingLine ? (
                           <input
                             type="number"
                             step="0.1"
                             min="0"
-                            placeholder="0"
-                            value={entry.linePressure || ""}
-                            onChange={(e) => updateEntry(well.id, "linePressure", e.target.value)}
-                            className="w-20 border-gray-300 rounded text-sm p-1 text-center focus:ring-tepui-blue focus:border-tepui-blue"
+                            className="w-20 text-center border border-tepui-blue rounded px-1 py-0.5 text-sm"
+                            value={editingCell?.value || ""}
+                            autoFocus
+                            onBlur={() => {
+                              if (editingCell) {
+                                saveCellEdit(entry, "linePressure", editingCell.value);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                if (editingCell) {
+                                  saveCellEdit(entry, "linePressure", editingCell.value);
+                                }
+                              } else if (e.key === "Escape") {
+                                cancelEditing();
+                              }
+                            }}
+                            onChange={(e) => setEditingCell({ ...editingCell!, value: e.target.value })}
                           />
-                        </td>
-                        {/* Comments */}
-                        <td className="px-1 py-2">
+                        ) : (
+                          entry.linePressure ? Math.round(entry.linePressure) : "-"
+                        )}
+                      </td>
+                      <td 
+                        className="px-3 py-3 text-sm text-gray-500 min-w-[200px] cursor-pointer"
+                        onClick={() => !isEditingComment && startEditing(entry, "comment")}
+                      >
+                        {isEditingComment ? (
                           <input
                             type="text"
-                            placeholder="Notes..."
-                            value={entry.comment || ""}
-                            onChange={(e) => updateEntry(well.id, "comment", e.target.value)}
-                            className="w-32 border-gray-300 rounded text-sm p-1 focus:ring-tepui-blue focus:border-tepui-blue"
+                            className="w-full border border-tepui-blue rounded px-1 py-0.5 text-sm"
+                            value={editingCell?.value || ""}
+                            autoFocus
+                            onBlur={() => {
+                              if (editingCell) {
+                                saveCellEdit(entry, "comment", editingCell.value);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                if (editingCell) {
+                                  saveCellEdit(entry, "comment", editingCell.value);
+                                }
+                              } else if (e.key === "Escape") {
+                                cancelEditing();
+                              }
+                            }}
+                            onChange={(e) => setEditingCell({ ...editingCell!, value: e.target.value })}
                           />
-                        </td>
-                        {/* Save Button */}
-                        <td className="px-3 py-2 whitespace-nowrap text-center sticky right-0 bg-white">
-                          <button
-                            type="button"
-                            onClick={() => saveWellData(well.id)}
-                            disabled={savingWellId === well.id || !hasData}
-                            className="inline-flex items-center justify-center px-4 py-2 border-2 border-tepui-blue rounded-md text-sm font-semibold text-white bg-tepui-blue hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-tepui-blue disabled:opacity-50 disabled:cursor-not-allowed shadow-sm min-w-[80px]"
-                          >
-                            {savingWellId === well.id ? (
-                              <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                            ) : (
-                              <>
-                                <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                </svg>
-                                Save
-                              </>
-                            )}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                        ) : (
+                          entry.comment || "-"
+                        )}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm font-medium sticky right-0 bg-white z-10 border-l border-gray-200">
+                        <button
+                          onClick={() => handleDelete(entry)}
+                          className="text-red-600 hover:text-red-900 text-sm"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
-
-        {/* Submit Button - Fixed at bottom */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg">
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full inline-flex items-center justify-center px-6 py-3 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {submitting ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Saving All...
-              </>
-            ) : (
-              <>
-                <svg className="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                Save All Wells
-              </>
-            )}
-          </button>
-        </div>
-      </form>
+      </div>
     </div>
   );
 }
-
