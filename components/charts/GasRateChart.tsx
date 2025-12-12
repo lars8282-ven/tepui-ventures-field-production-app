@@ -113,7 +113,14 @@ export function GasRateChart({ wells, readings }: GasRateChartProps) {
 
       // Sum all rates across all wells for this date (separate totals)
       // Only include wells that have actual readings on this date (no forward-filling)
+      // Exclude SWD (Salt Water Disposal) wells from gas rate calculations
       wells.forEach((well) => {
+        // Exclude SWD wells
+        const wellNameLower = well.name.toLowerCase();
+        if (wellNameLower.includes("swd")) {
+          return;
+        }
+        
         const dateWellData = dateData[well.id];
         
         if (dateWellData) {

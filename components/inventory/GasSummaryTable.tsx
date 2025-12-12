@@ -35,9 +35,45 @@ export function GasSummaryTable({
   readings,
   selectedDate = null,
 }: GasSummaryTableProps) {
+  // Find the latest date that has any Gas Rate or Instant Gas Rate readings (when selectedDate is null)
+  const latestDateWithData = useMemo(() => {
+    if (selectedDate) return selectedDate;
+    
+    // Find all unique dates from Gas Rate and Instant Gas Rate readings only
+    const dateSet = new Set<string>();
+    readings.forEach((r) => {
+      // Only consider Gas Rate and Instant Gas Rate readings
+      const meterType = r.meterType || "";
+      if (meterType !== "Gas Rate" && meterType !== "gas rate" && 
+          meterType !== "Instant Gas Rate" && meterType !== "instant gas rate") {
+        return;
+      }
+      
+      const timestampStr = r.timestamp || r.createdAt || "";
+      let readingDateKey = "";
+      if (typeof timestampStr === "string" && timestampStr.includes("T")) {
+        readingDateKey = timestampStr.split("T")[0];
+      } else {
+        try {
+          readingDateKey = format(new Date(timestampStr), "yyyy-MM-dd");
+        } catch {
+          return;
+        }
+      }
+      if (readingDateKey) {
+        dateSet.add(readingDateKey);
+      }
+    });
+    
+    // Return the latest date (sorted descending, first one)
+    return Array.from(dateSet).sort().reverse()[0] || null;
+  }, [readings, selectedDate]);
+
   // Process data: Get readings for each well (by date if specified)
   const gasData = useMemo(() => {
     const data: Record<string, GasData> = {};
+    // Use latestDateWithData when selectedDate is null to ensure all wells use the same date
+    const effectiveDate = selectedDate || latestDateWithData;
 
     wells.forEach((well) => {
       const wellId = well.id;
@@ -81,10 +117,10 @@ export function GasSummaryTable({
         }) || null;
       };
 
-      // Get the latest reading (filtered by date if specified, otherwise most recent)
+      // Get the latest reading (filtered by date - use effectiveDate which is either selectedDate or latestDateWithData)
       let latestGasRate: any = null;
-      if (selectedDate) {
-        // If date is selected, get the reading from that specific date
+      if (effectiveDate) {
+        // Get the reading from that specific date
         latestGasRate = allGasRateReadings
           .filter((r) => {
             // Extract date key directly from ISO string to avoid timezone issues
@@ -99,19 +135,12 @@ export function GasSummaryTable({
                 return false;
               }
             }
-            return readingDateKey === selectedDate;
+            return readingDateKey === effectiveDate;
           })
           .sort((a, b) =>
             new Date(b.timestamp || b.createdAt).getTime() -
             new Date(a.timestamp || a.createdAt).getTime()
           )[0];
-      } else {
-        // Otherwise, get the most recent reading
-        latestGasRate = allGasRateReadings.sort(
-          (a, b) =>
-            new Date(b.timestamp || b.createdAt).getTime() -
-            new Date(a.timestamp || a.createdAt).getTime()
-        )[0];
       }
 
       // Find the reading from exactly one day before the latest reading
@@ -125,10 +154,10 @@ export function GasSummaryTable({
         gasRateRate = latestGasRate.value - previousGasRate.value;
       }
 
-      // Get the latest Instant Gas Rate reading
+      // Get the latest Instant Gas Rate reading (filtered by date - use effectiveDate)
       let latestInstantGasRate: any = null;
-      if (selectedDate) {
-        // If date is selected, get the reading from that specific date
+      if (effectiveDate) {
+        // Get the reading from that specific date
         latestInstantGasRate = allInstantGasRateReadings
           .filter((r) => {
             // Extract date key directly from ISO string to avoid timezone issues
@@ -143,19 +172,12 @@ export function GasSummaryTable({
                 return false;
               }
             }
-            return readingDateKey === selectedDate;
+            return readingDateKey === effectiveDate;
           })
           .sort((a, b) =>
             new Date(b.timestamp || b.createdAt).getTime() -
             new Date(a.timestamp || a.createdAt).getTime()
           )[0];
-      } else {
-        // Otherwise, get the most recent reading
-        latestInstantGasRate = allInstantGasRateReadings.sort(
-          (a, b) =>
-            new Date(b.timestamp || b.createdAt).getTime() -
-            new Date(a.timestamp || a.createdAt).getTime()
-        )[0];
       }
 
       // Find the reading from exactly one day before the latest reading
@@ -185,31 +207,41 @@ export function GasSummaryTable({
     });
 
     return data;
-  }, [wells, readings, selectedDate]);
+  }, [wells, readings, selectedDate, latestDateWithData]);
 
-  // Calculate totals
+
+  // Filter wells that have at least one rate > 0 and exclude SWD wells
+  const wellsWithData = useMemo(() => {
+    return wells.filter((well) => {
+      // Exclude SWD (Salt Water Disposal) wells from gas rate calculations
+      const wellNameLower = well.name.toLowerCase();
+      if (wellNameLower.includes("swd")) {
+        return false;
+      }
+      
+      const data = gasData[well.id];
+      return (data?.gasRate.value || 0) > 0 || (data?.instantGasRate.value || 0) > 0;
+    });
+  }, [wells, gasData]);
+
+  // Calculate totals only from displayed wells (wellsWithData), not all wells
   const totals = useMemo(() => {
     let gasRateTotal = 0;
     let instantGasRateTotal = 0;
 
-    Object.values(gasData).forEach((wellData) => {
-      gasRateTotal += wellData.gasRate.value || 0;
-      instantGasRateTotal += wellData.instantGasRate.value || 0;
+    wellsWithData.forEach((well) => {
+      const data = gasData[well.id];
+      if (data) {
+        gasRateTotal += data.gasRate.value || 0;
+        instantGasRateTotal += data.instantGasRate.value || 0;
+      }
     });
 
     return {
       gasRate: gasRateTotal,
       instantGasRate: instantGasRateTotal,
     };
-  }, [gasData]);
-
-  // Filter wells that have at least one rate > 0
-  const wellsWithData = useMemo(() => {
-    return wells.filter((well) => {
-      const data = gasData[well.id];
-      return (data?.gasRate.value || 0) > 0 || (data?.instantGasRate.value || 0) > 0;
-    });
-  }, [wells, gasData]);
+  }, [wellsWithData, gasData]);
 
   if (wells.length === 0) {
     return (
