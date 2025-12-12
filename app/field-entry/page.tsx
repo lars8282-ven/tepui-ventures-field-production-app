@@ -96,6 +96,9 @@ export default function FieldEntryPage() {
   const [showWellDropdown, setShowWellDropdown] = useState(false);
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>("");
   const wellDropdownRef = useRef<HTMLDivElement>(null);
+  const wellInputRef = useRef<HTMLInputElement>(null);
+  const wellDropdownMenuRef = useRef<HTMLDivElement>(null);
+  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; width: number } | null>(null);
 
   const [formData, setFormData] = useState<FieldEntryFormData>(() => {
     // Use a safe default that works in both SSR and client
@@ -126,12 +129,43 @@ export default function FieldEntryPage() {
 
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
 
+  // Update dropdown position when it should be shown
+  useEffect(() => {
+    const updatePosition = () => {
+      if (showWellDropdown && wellInputRef.current) {
+        const rect = wellInputRef.current.getBoundingClientRect();
+        setDropdownPosition({
+          top: rect.bottom + window.scrollY + 4,
+          left: rect.left + window.scrollX,
+          width: rect.width,
+        });
+      } else {
+        setDropdownPosition(null);
+      }
+    };
+
+    updatePosition();
+
+    // Update position on scroll and resize
+    if (showWellDropdown) {
+      window.addEventListener('scroll', updatePosition, true);
+      window.addEventListener('resize', updatePosition);
+      return () => {
+        window.removeEventListener('scroll', updatePosition, true);
+        window.removeEventListener('resize', updatePosition);
+      };
+    }
+  }, [showWellDropdown, wellSearchQuery]);
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
       if (
-        wellDropdownRef.current &&
-        !wellDropdownRef.current.contains(event.target as Node)
+        wellInputRef.current &&
+        !wellInputRef.current.contains(target) &&
+        wellDropdownMenuRef.current &&
+        !wellDropdownMenuRef.current.contains(target)
       ) {
         setShowWellDropdown(false);
       }
@@ -494,7 +528,7 @@ export default function FieldEntryPage() {
 
   const handleDelete = async (entry: GroupedEntry) => {
     const confirmed = window.confirm(
-      `Are you sure you want to delete the field entry for ${entry.wellName} on ${format(new Date(entry.date), "MMM d, yyyy")}?`
+      `Are you sure you want to delete the field entry for ${entry.wellName} on ${format(new Date(entry.dateKey + "T12:00:00"), "MMM d, yyyy")}?`
     );
     if (!confirmed) return;
 
@@ -843,6 +877,7 @@ export default function FieldEntryPage() {
                     <td className="px-4 py-3 whitespace-nowrap text-sm font-medium sticky left-0 bg-blue-50 z-10 border-r border-gray-200">
                       <div className="relative" ref={wellDropdownRef}>
                         <input
+                          ref={wellInputRef}
                           type="text"
                           required
                           className="w-full border-gray-300 rounded px-2 py-1 text-sm border"
@@ -864,9 +899,20 @@ export default function FieldEntryPage() {
                           }}
                           autoComplete="off"
                         />
-                        {showWellDropdown && filteredWells.length > 0 && (
-                          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
-                            {filteredWells.map((well: any) => (
+                      </div>
+                      {showWellDropdown && dropdownPosition && (
+                        <div
+                          ref={wellDropdownMenuRef}
+                          className="fixed z-[9999] bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto"
+                          style={{
+                            top: `${dropdownPosition.top}px`,
+                            left: `${dropdownPosition.left}px`,
+                            width: `${dropdownPosition.width}px`,
+                            minWidth: '200px',
+                          }}
+                        >
+                          {filteredWells.length > 0 ? (
+                            filteredWells.map((well: any) => (
                               <div
                                 key={well.id}
                                 className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
@@ -879,17 +925,29 @@ export default function FieldEntryPage() {
                               >
                                 {well.name}
                               </div>
-                            ))}
-                          </div>
-                        )}
-                        {showWellDropdown &&
-                          wellSearchQuery &&
-                          filteredWells.length === 0 && (
-                            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg p-4 text-sm text-gray-500">
+                            ))
+                          ) : wellSearchQuery ? (
+                            <div className="px-4 py-2 text-sm text-gray-500">
                               No wells found
                             </div>
+                          ) : (
+                            safeWells.map((well: any) => (
+                              <div
+                                key={well.id}
+                                className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                onClick={() =>
+                                  handleWellSelect(
+                                    well.id,
+                                    well.name
+                                  )
+                                }
+                              >
+                                {well.name}
+                              </div>
+                            ))
                           )}
-                      </div>
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm sticky left-[140px] bg-blue-50 z-10 border-r border-gray-200">
                       <input
@@ -1108,7 +1166,7 @@ export default function FieldEntryPage() {
                         {entry.wellName}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 sticky left-[140px] bg-white z-10 border-r border-gray-200">
-                        {format(new Date(entry.date), "MMM d, yyyy")}
+                        {format(new Date(entry.dateKey + "T12:00:00"), "MMM d, yyyy")}
                       </td>
                       <td 
                         className="px-3 py-3 whitespace-nowrap text-sm text-center text-gray-900 sticky left-[220px] bg-white z-10 border-r border-gray-200 cursor-pointer"

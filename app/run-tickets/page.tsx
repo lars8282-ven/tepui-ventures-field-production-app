@@ -6,6 +6,7 @@ import { db } from "@/lib/instant";
 import { useRouter } from "next/navigation";
 import { RunTicketsVolumeChart } from "@/components/charts/RunTicketsVolumeChart";
 import { format } from "date-fns";
+import { dateToCSTTimestamp } from "@/lib/utils";
 
 interface RunTicketFormData {
   wellId: string;
@@ -208,7 +209,7 @@ export default function RunTicketsPage() {
     try {
       const ticketData = {
         wellId: formData.wellId,
-        date: new Date(`${formData.date}T12:00:00Z`).toISOString(),
+        date: dateToCSTTimestamp(formData.date),
         ticketNumber: formData.ticketNumber.trim(),
         tank: formData.tank,
         bsWPercent: formData.bsWPercent ? parseFloat(formData.bsWPercent) : 0,

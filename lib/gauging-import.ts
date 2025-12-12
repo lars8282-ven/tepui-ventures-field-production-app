@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import { id } from "@instantdb/react";
 import { db } from "./instant";
+import { dateToCSTTimestamp, timestampToDateString } from "./utils";
 
 export interface GaugingRow {
   wellNumber: string; // API 14 or well identifier
@@ -644,9 +645,22 @@ export async function importGaugingData(
           return;
         }
 
-        // row.date is a string (ISO string or sheet name)
-        const timestamp = row.date ? new Date(row.date).toISOString() : now;
-        const dateOnly = timestamp.split("T")[0]; // YYYY-MM-DD
+        // row.date is a string (ISO string or YYYY-MM-DD format)
+        let timestamp: string;
+        let dateOnly: string;
+        if (row.date) {
+          // If it's already an ISO timestamp, extract the date part
+          // Otherwise, treat it as a date string
+          const dateStr = row.date.includes("T") 
+            ? timestampToDateString(row.date) 
+            : row.date;
+          dateOnly = dateStr;
+          timestamp = dateToCSTTimestamp(dateStr);
+        } else {
+          // Fallback to current date if no date provided
+          dateOnly = now.split("T")[0];
+          timestamp = dateToCSTTimestamp(dateOnly);
+        }
 
         // Prepare common metadata
         const commonMetadata: Record<string, any> = {

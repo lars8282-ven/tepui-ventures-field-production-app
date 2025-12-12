@@ -4,6 +4,7 @@ import { useState } from "react";
 import { id } from "@instantdb/react";
 import { db } from "@/lib/instant";
 import { useRouter } from "next/navigation";
+import { dateToCSTTimestamp } from "@/lib/utils";
 
 export default function DailyEntryPage() {
   const router = useRouter();
@@ -67,8 +68,8 @@ export default function DailyEntryPage() {
 
     setSubmitting(true);
     const transactions: any[] = [];
-    // Use 12:00:00 UTC to ensure the date doesn't shift due to timezone
-    const timestamp = new Date(`${date}T12:00:00Z`).toISOString();
+    // Use dateToCSTTimestamp to ensure the date doesn't shift due to timezone
+    const timestamp = dateToCSTTimestamp(date);
     const now = new Date().toISOString();
 
     try {

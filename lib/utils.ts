@@ -66,14 +66,14 @@ export function getTodayCST(): string {
 /**
  * Convert a date string (YYYY-MM-DD) to ISO timestamp at noon CST
  * This creates a timestamp that represents noon in Central Time (America/Chicago)
- * We store as 12:00 UTC, which will be early morning in CST but ensures
- * the date portion is correct when extracted using timestampToDateString
+ * We store as 18:00 UTC (noon CST in winter) or 17:00 UTC (noon CDT in summer)
+ * to ensure the date portion is correct when extracted using timestampToDateString
  */
 export function dateToCSTTimestamp(dateString: string): string {
-  // Store as noon UTC. When timestampToDateString extracts the date,
-  // it converts to CST timezone, which will give us the correct date
-  // (12:00 UTC = 6:00 AM CST or 7:00 AM CDT, so same calendar day)
-  return new Date(`${dateString}T12:00:00Z`).toISOString();
+  // Store as 18:00 UTC, which is approximately noon CST (accounting for DST)
+  // This ensures that when we extract the date in CST timezone, we get the same calendar day
+  // 18:00 UTC = 12:00 CST (winter) or 13:00 CDT (summer), both on the same day
+  return new Date(`${dateString}T18:00:00Z`).toISOString();
 }
 
 /**
