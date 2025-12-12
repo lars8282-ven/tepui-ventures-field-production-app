@@ -798,6 +798,321 @@ export default function FieldEntryPage() {
         </button>
       </div>
 
+      {showForm && (
+        <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
+          <div className="px-4 py-3 border-b border-gray-200 flex justify-between items-center bg-blue-50">
+            <h2 className="text-base font-medium text-gray-900">New Entry</h2>
+            <button
+              type="button"
+              onClick={resetForm}
+              className="text-gray-500 hover:text-gray-700 text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+          <div className="p-4">
+            <div className="grid grid-cols-12 gap-4 items-end">
+              <div className="col-span-12 sm:col-span-2">
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Well Name *
+                </label>
+                <div className="relative" ref={wellDropdownRef}>
+                  <input
+                    ref={wellInputRef}
+                    type="text"
+                    required
+                    className="w-full border-gray-300 rounded px-2 py-1 text-sm border"
+                    placeholder="Well..."
+                    value={wellSearchQuery}
+                    onChange={(e) => {
+                      setWellSearchQuery(e.target.value);
+                      setShowWellDropdown(true);
+                      if (e.target.value === "") {
+                        setFormData({ ...formData, wellId: "" });
+                      }
+                    }}
+                    onFocus={() => setShowWellDropdown(true)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleSubmit(e as any);
+                      }
+                    }}
+                    autoComplete="off"
+                  />
+                  {showWellDropdown && dropdownPosition && (
+                    <div
+                      ref={wellDropdownMenuRef}
+                      className="fixed z-[9999] bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto"
+                      style={{
+                        top: `${dropdownPosition.top}px`,
+                        left: `${dropdownPosition.left}px`,
+                        width: `${dropdownPosition.width}px`,
+                        minWidth: '200px',
+                      }}
+                    >
+                      {filteredWells.length > 0 ? (
+                        filteredWells.map((well: any) => (
+                          <div
+                            key={well.id}
+                            className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                            onClick={() =>
+                              handleWellSelect(
+                                well.id,
+                                well.name
+                              )
+                            }
+                          >
+                            {well.name}
+                          </div>
+                        ))
+                      ) : wellSearchQuery ? (
+                        <div className="px-4 py-2 text-sm text-gray-500">
+                          No wells found
+                        </div>
+                      ) : (
+                        safeWells.map((well: any) => (
+                          <div
+                            key={well.id}
+                            className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                            onClick={() =>
+                              handleWellSelect(
+                                well.id,
+                                well.name
+                              )
+                            }
+                          >
+                            {well.name}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="col-span-12 sm:col-span-2">
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Date *
+                </label>
+                <input
+                  type="date"
+                  required
+                  className="w-full border-gray-300 rounded px-2 py-1 text-sm border"
+                  value={formData.date}
+                  onChange={(e) =>
+                    setFormData({ ...formData, date: e.target.value })
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleSubmit(e as any);
+                    }
+                  }}
+                />
+              </div>
+              <div className="col-span-6 sm:col-span-1">
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Tank 1 (in)
+                </label>
+                <input
+                  type="number"
+                  step="0.25"
+                  min="0"
+                  className="w-full text-center border-gray-300 rounded px-1 py-1 text-sm border"
+                  value={formData.tank1Inches}
+                  onChange={(e) =>
+                    setFormData({ ...formData, tank1Inches: e.target.value })
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleSubmit(e as any);
+                    }
+                  }}
+                />
+              </div>
+              <div className="col-span-6 sm:col-span-1">
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Tank 2 (in)
+                </label>
+                <input
+                  type="number"
+                  step="0.25"
+                  min="0"
+                  className="w-full text-center border-gray-300 rounded px-1 py-1 text-sm border"
+                  value={formData.tank2Inches}
+                  onChange={(e) =>
+                    setFormData({ ...formData, tank2Inches: e.target.value })
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleSubmit(e as any);
+                    }
+                  }}
+                />
+              </div>
+              <div className="col-span-6 sm:col-span-1">
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Tank 3 (in)
+                </label>
+                <input
+                  type="number"
+                  step="0.25"
+                  min="0"
+                  className="w-full text-center border-gray-300 rounded px-1 py-1 text-sm border"
+                  value={formData.tank3Inches}
+                  onChange={(e) =>
+                    setFormData({ ...formData, tank3Inches: e.target.value })
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleSubmit(e as any);
+                    }
+                  }}
+                />
+              </div>
+              <div className="col-span-6 sm:col-span-1">
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Gas Rate (MCF)
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  className="w-full text-center border-gray-300 rounded px-1 py-1 text-sm border"
+                  value={formData.gasRate}
+                  onChange={(e) =>
+                    setFormData({ ...formData, gasRate: e.target.value })
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleSubmit(e as any);
+                    }
+                  }}
+                />
+              </div>
+              <div className="col-span-6 sm:col-span-1">
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Instant Gas (MCF)
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  className="w-full text-center border-gray-300 rounded px-1 py-1 text-sm border"
+                  value={formData.instantGasRate}
+                  onChange={(e) =>
+                    setFormData({ ...formData, instantGasRate: e.target.value })
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleSubmit(e as any);
+                    }
+                  }}
+                />
+              </div>
+              <div className="col-span-6 sm:col-span-1">
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Tubing (PSI)
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  className="w-full text-center border-gray-300 rounded px-1 py-1 text-sm border"
+                  value={formData.tubingPressure}
+                  onChange={(e) =>
+                    setFormData({ ...formData, tubingPressure: e.target.value })
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleSubmit(e as any);
+                    }
+                  }}
+                />
+              </div>
+              <div className="col-span-6 sm:col-span-1">
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Casing (PSI)
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  className="w-full text-center border-gray-300 rounded px-1 py-1 text-sm border"
+                  value={formData.casingPressure}
+                  onChange={(e) =>
+                    setFormData({ ...formData, casingPressure: e.target.value })
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleSubmit(e as any);
+                    }
+                  }}
+                />
+              </div>
+              <div className="col-span-6 sm:col-span-1">
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Line (PSI)
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  className="w-full text-center border-gray-300 rounded px-1 py-1 text-sm border"
+                  value={formData.linePressure}
+                  onChange={(e) =>
+                    setFormData({ ...formData, linePressure: e.target.value })
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleSubmit(e as any);
+                    }
+                  }}
+                />
+              </div>
+              <div className="col-span-12 sm:col-span-2">
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Comments
+                </label>
+                <input
+                  type="text"
+                  className="w-full border-gray-300 rounded px-2 py-1 text-sm border"
+                  placeholder="Comments..."
+                  value={formData.comment}
+                  onChange={(e) =>
+                    setFormData({ ...formData, comment: e.target.value })
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleSubmit(e as any);
+                    }
+                  }}
+                />
+              </div>
+              <div className="col-span-12 sm:col-span-1 flex gap-2 justify-end sm:justify-start">
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={submitting}
+                  className="px-4 py-2 text-sm font-medium text-white bg-tepui-blue hover:bg-blue-700 rounded-md disabled:opacity-50"
+                >
+                  {submitting ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
         <div className="px-4 py-3 border-b border-gray-200 flex justify-between items-center">
           <h2 className="text-base font-medium text-gray-900">Field Entries</h2>
@@ -820,7 +1135,7 @@ export default function FieldEntryPage() {
             </select>
           </div>
         </div>
-        {filteredEntries.length === 0 && !showForm ? (
+        {filteredEntries.length === 0 ? (
           <div className="p-8 text-center">
             <p className="text-sm text-gray-600">
               {selectedDateFilter
@@ -872,282 +1187,6 @@ export default function FieldEntryPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {showForm && (
-                  <tr className="bg-blue-50 border-b-2 border-tepui-blue">
-                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium sticky left-0 bg-blue-50 z-10 border-r border-gray-200">
-                      <div className="relative" ref={wellDropdownRef}>
-                        <input
-                          ref={wellInputRef}
-                          type="text"
-                          required
-                          className="w-full border-gray-300 rounded px-2 py-1 text-sm border"
-                          placeholder="Well..."
-                          value={wellSearchQuery}
-                          onChange={(e) => {
-                            setWellSearchQuery(e.target.value);
-                            setShowWellDropdown(true);
-                            if (e.target.value === "") {
-                              setFormData({ ...formData, wellId: "" });
-                            }
-                          }}
-                          onFocus={() => setShowWellDropdown(true)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              handleSubmit(e as any);
-                            }
-                          }}
-                          autoComplete="off"
-                        />
-                      </div>
-                      {showWellDropdown && dropdownPosition && (
-                        <div
-                          ref={wellDropdownMenuRef}
-                          className="fixed z-[9999] bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto"
-                          style={{
-                            top: `${dropdownPosition.top}px`,
-                            left: `${dropdownPosition.left}px`,
-                            width: `${dropdownPosition.width}px`,
-                            minWidth: '200px',
-                          }}
-                        >
-                          {filteredWells.length > 0 ? (
-                            filteredWells.map((well: any) => (
-                              <div
-                                key={well.id}
-                                className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
-                                onClick={() =>
-                                  handleWellSelect(
-                                    well.id,
-                                    well.name
-                                  )
-                                }
-                              >
-                                {well.name}
-                              </div>
-                            ))
-                          ) : wellSearchQuery ? (
-                            <div className="px-4 py-2 text-sm text-gray-500">
-                              No wells found
-                            </div>
-                          ) : (
-                            safeWells.map((well: any) => (
-                              <div
-                                key={well.id}
-                                className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
-                                onClick={() =>
-                                  handleWellSelect(
-                                    well.id,
-                                    well.name
-                                  )
-                                }
-                              >
-                                {well.name}
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm sticky left-[140px] bg-blue-50 z-10 border-r border-gray-200">
-                      <input
-                        type="date"
-                        required
-                        className="w-full border-gray-300 rounded px-2 py-1 text-sm border"
-                        value={formData.date}
-                        onChange={(e) =>
-                          setFormData({ ...formData, date: e.target.value })
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleSubmit(e as any);
-                          }
-                        }}
-                      />
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center sticky left-[220px] bg-blue-50 z-10 border-r border-gray-200">
-                      <input
-                        type="number"
-                        step="0.25"
-                        min="0"
-                        className="w-20 text-center border-gray-300 rounded px-1 py-1 text-sm border"
-                        value={formData.tank1Inches}
-                        onChange={(e) =>
-                          setFormData({ ...formData, tank1Inches: e.target.value })
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleSubmit(e as any);
-                          }
-                        }}
-                      />
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center sticky left-[300px] bg-blue-50 z-10 border-r border-gray-200">
-                      <input
-                        type="number"
-                        step="0.25"
-                        min="0"
-                        className="w-20 text-center border-gray-300 rounded px-1 py-1 text-sm border"
-                        value={formData.tank2Inches}
-                        onChange={(e) =>
-                          setFormData({ ...formData, tank2Inches: e.target.value })
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleSubmit(e as any);
-                          }
-                        }}
-                      />
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center sticky left-[380px] bg-blue-50 z-10 border-r border-gray-200">
-                      <input
-                        type="number"
-                        step="0.25"
-                        min="0"
-                        className="w-20 text-center border-gray-300 rounded px-1 py-1 text-sm border"
-                        value={formData.tank3Inches}
-                        onChange={(e) =>
-                          setFormData({ ...formData, tank3Inches: e.target.value })
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleSubmit(e as any);
-                          }
-                        }}
-                      />
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center sticky left-[460px] bg-blue-50 z-10 border-r border-gray-200">
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        className="w-20 text-center border-gray-300 rounded px-1 py-1 text-sm border"
-                        value={formData.gasRate}
-                        onChange={(e) =>
-                          setFormData({ ...formData, gasRate: e.target.value })
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleSubmit(e as any);
-                          }
-                        }}
-                      />
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center sticky left-[540px] bg-blue-50 z-10 border-r border-gray-200">
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        className="w-20 text-center border-gray-300 rounded px-1 py-1 text-sm border"
-                        value={formData.instantGasRate}
-                        onChange={(e) =>
-                          setFormData({ ...formData, instantGasRate: e.target.value })
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleSubmit(e as any);
-                          }
-                        }}
-                      />
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center">
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        className="w-20 text-center border-gray-300 rounded px-1 py-1 text-sm border"
-                        value={formData.tubingPressure}
-                        onChange={(e) =>
-                          setFormData({ ...formData, tubingPressure: e.target.value })
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleSubmit(e as any);
-                          }
-                        }}
-                      />
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center">
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        className="w-20 text-center border-gray-300 rounded px-1 py-1 text-sm border"
-                        value={formData.casingPressure}
-                        onChange={(e) =>
-                          setFormData({ ...formData, casingPressure: e.target.value })
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleSubmit(e as any);
-                          }
-                        }}
-                      />
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-center">
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        className="w-20 text-center border-gray-300 rounded px-1 py-1 text-sm border"
-                        value={formData.linePressure}
-                        onChange={(e) =>
-                          setFormData({ ...formData, linePressure: e.target.value })
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleSubmit(e as any);
-                          }
-                        }}
-                      />
-                    </td>
-                    <td className="px-3 py-3 text-sm min-w-[200px]">
-                      <input
-                        type="text"
-                        className="w-full border-gray-300 rounded px-2 py-1 text-sm border"
-                        placeholder="Comments..."
-                        value={formData.comment}
-                        onChange={(e) =>
-                          setFormData({ ...formData, comment: e.target.value })
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleSubmit(e as any);
-                          }
-                        }}
-                      />
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium sticky right-0 bg-blue-50 z-10 border-l border-gray-200">
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={handleSubmit}
-                          disabled={submitting}
-                          className="text-tepui-blue hover:text-blue-700 text-sm disabled:opacity-50"
-                        >
-                          {submitting ? "Saving..." : "Save"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={resetForm}
-                          className="text-gray-500 hover:text-gray-700 text-sm"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )}
                 {filteredEntries.map((entry, index) => {
                   const entryKey = `${entry.wellId}_${entry.dateKey}`;
                   const isEditingTank1 = editingCell?.entryKey === entryKey && editingCell?.field === "tank1";
